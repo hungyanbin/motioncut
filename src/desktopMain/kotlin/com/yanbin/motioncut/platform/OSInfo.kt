@@ -3,12 +3,17 @@ package com.yanbin.motioncut.platform
 import java.io.BufferedReader
 import java.io.File
 import java.io.InputStreamReader
+import java.lang.management.ManagementFactory
+import java.text.DecimalFormat
 
 /**
  * Desktop implementation of OSInfo that detects the platform at runtime
  */
 class DesktopOSInfo : OSInfo {
     private val osName = System.getProperty("os.name").lowercase()
+    private val runtime = Runtime.getRuntime()
+    private val memoryBean = ManagementFactory.getMemoryMXBean()
+    private val osBean = ManagementFactory.getOperatingSystemMXBean()
     
     override fun getOSName(): String {
         return when {
@@ -185,6 +190,469 @@ class DesktopOSInfo : OSInfo {
         } catch (e: Exception) {
             // Final fallback to system property
             System.getProperty("os.version") ?: "Unknown"
+        }
+    }
+    
+    override fun getMemoryInfo(): MemoryInfo {
+        return try {
+            val totalMemory = when {
+                osName.contains("mac") || osName.contains("darwin") -> getMacOSMemory()
+                osName.contains("win") -> getWindowsMemory()
+                osName.contains("linux") -> getLinuxMemory()
+                else -> getJavaMemory()
+            }
+            totalMemory
+        } catch (e: Exception) {
+            getJavaMemory()
+        }
+    }
+    
+    override fun getCPUInfo(): CPUInfo {
+        return try {
+            when {
+                osName.contains("mac") || osName.contains("darwin") -> getMacOSCPU()
+                osName.contains("win") -> getWindowsCPU()
+                osName.contains("linux") -> getLinuxCPU()
+                else -> getJavaCPU()
+            }
+        } catch (e: Exception) {
+            getJavaCPU()
+        }
+    }
+    
+    override fun getGPUInfo(): List<GPUInfo> {
+        return try {
+            when {
+                osName.contains("mac") || osName.contains("darwin") -> getMacOSGPU()
+                osName.contains("win") -> getWindowsGPU()
+                osName.contains("linux") -> getLinuxGPU()
+                else -> emptyList()
+            }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    
+    private fun formatBytes(bytes: Long): String {
+        val df = DecimalFormat("#.##")
+        return when {
+            bytes >= 1024 * 1024 * 1024 -> "${df.format(bytes / (1024.0 * 1024.0 * 1024.0))} GB"
+            bytes >= 1024 * 1024 -> "${df.format(bytes / (1024.0 * 1024.0))} MB"
+            bytes >= 1024 -> "${df.format(bytes / 1024.0)} KB"
+            else -> "$bytes B"
+        }
+    }
+    
+    private fun getJavaMemory(): MemoryInfo {
+        val heapMemory = memoryBean.heapMemoryUsage
+        val nonHeapMemory = memoryBean.nonHeapMemoryUsage
+        
+        val totalHeap = heapMemory.max
+        val usedHeap = heapMemory.used
+        val availableHeap = totalHeap - usedHeap
+        
+        val usagePercentage = if (totalHeap > 0) (usedHeap.toDouble() / totalHeap.toDouble()) * 100 else 0.0
+        
+        return MemoryInfo(
+            totalMemory = formatBytes(totalHeap),
+            availableMemory = formatBytes(availableHeap),
+            usedMemory = formatBytes(usedHeap),
+            usagePercentage = usagePercentage
+        )
+    }
+    
+    private fun getJavaCPU(): CPUInfo {
+        val processors = osBean.availableProcessors
+        val arch = System.getProperty("os.arch") ?: "Unknown"
+        
+        return CPUInfo(
+            name = "Unknown CPU",
+            cores = processors,
+            threads = processors,
+            architecture = arch
+        )
+    }
+    
+    // macOS-specific implementations
+    private fun getMacOSMemory(): MemoryInfo {
+        return try {
+            val process = ProcessBuilder("vm_stat").start()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val lines = reader.readLines()
+            reader.close()
+            process.waitFor()
+            
+            var pageSize = 4096L // Default page size
+            var freePages = 0L
+            var activePages = 0L
+            var inactivePages = 0L
+            var wiredPages = 0L
+            
+            lines.forEach { line ->
+                when {
+                    line.contains("page size of") -> {
+                        val match = Regex("page size of (\\d+) bytes").find(line)
+                        pageSize = match?.groupValues?.get(1)?.toLongOrNull() ?: 4096L
+                    }
+                    line.startsWith("Pages free:") -> {
+                        freePages = line.substringAfter(":").trim().removeSuffix(".").toLongOrNull() ?: 0L
+                    }
+                    line.startsWith("Pages active:") -> {
+                        activePages = line.substringAfter(":").trim().removeSuffix(".").toLongOrNull() ?: 0L
+                    }
+                    line.startsWith("Pages inactive:") -> {
+                        inactivePages = line.substringAfter(":").trim().removeSuffix(".").toLongOrNull() ?: 0L
+                    }
+                    line.startsWith("Pages wired down:") -> {
+                        wiredPages = line.substringAfter(":").trim().removeSuffix(".").toLongOrNull() ?: 0L
+                    }
+                }
+            }
+            
+            val totalPages = freePages + activePages + inactivePages + wiredPages
+            val usedPages = activePages + inactivePages + wiredPages
+            val totalMemory = totalPages * pageSize
+            val usedMemory = usedPages * pageSize
+            val availableMemory = freePages * pageSize
+            
+            val usagePercentage = if (totalMemory > 0) (usedMemory.toDouble() / totalMemory.toDouble()) * 100 else 0.0
+            
+            MemoryInfo(
+                totalMemory = formatBytes(totalMemory),
+                availableMemory = formatBytes(availableMemory),
+                usedMemory = formatBytes(usedMemory),
+                usagePercentage = usagePercentage
+            )
+        } catch (e: Exception) {
+            getJavaMemory()
+        }
+    }
+    
+    private fun getMacOSCPU(): CPUInfo {
+        return try {
+            val nameProcess = ProcessBuilder("sysctl", "-n", "machdep.cpu.brand_string").start()
+            val nameReader = BufferedReader(InputStreamReader(nameProcess.inputStream))
+            val cpuName = nameReader.readLine() ?: "Unknown CPU"
+            nameReader.close()
+            nameProcess.waitFor()
+            
+            val coreProcess = ProcessBuilder("sysctl", "-n", "hw.physicalcpu").start()
+            val coreReader = BufferedReader(InputStreamReader(coreProcess.inputStream))
+            val cores = coreReader.readLine()?.toIntOrNull() ?: osBean.availableProcessors
+            coreReader.close()
+            coreProcess.waitFor()
+            
+            val threadProcess = ProcessBuilder("sysctl", "-n", "hw.logicalcpu").start()
+            val threadReader = BufferedReader(InputStreamReader(threadProcess.inputStream))
+            val threads = threadReader.readLine()?.toIntOrNull() ?: osBean.availableProcessors
+            threadReader.close()
+            threadProcess.waitFor()
+            
+            val arch = System.getProperty("os.arch") ?: "Unknown"
+            
+            CPUInfo(
+                name = cpuName.trim(),
+                cores = cores,
+                threads = threads,
+                architecture = arch
+            )
+        } catch (e: Exception) {
+            getJavaCPU()
+        }
+    }
+    
+    private fun getMacOSGPU(): List<GPUInfo> {
+        return try {
+            val process = ProcessBuilder("system_profiler", "SPDisplaysDataType", "-json").start()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val output = reader.readText()
+            reader.close()
+            process.waitFor()
+            
+            // Simple parsing for GPU info (could be enhanced with JSON parsing library)
+            val gpuList = mutableListOf<GPUInfo>()
+            val lines = output.split("\n")
+            var currentGPU: String? = null
+            var currentVendor: String? = null
+            var currentMemory: String? = null
+            
+            lines.forEach { line ->
+                when {
+                    line.contains("\"_name\"") -> {
+                        currentGPU = line.substringAfter(":").trim().removeSurrounding("\"", "\",")
+                    }
+                    line.contains("\"sppci_vendor\"") -> {
+                        currentVendor = line.substringAfter(":").trim().removeSurrounding("\"", "\",")
+                    }
+                    line.contains("\"sppci_vram\"") -> {
+                        currentMemory = line.substringAfter(":").trim().removeSurrounding("\"", "\",")
+                    }
+                }
+            }
+            
+            if (currentGPU != null) {
+                gpuList.add(GPUInfo(
+                    name = currentGPU!!,
+                    vendor = currentVendor ?: "Unknown",
+                    memory = currentMemory
+                ))
+            }
+            
+            gpuList
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    
+    // Windows-specific implementations
+    private fun getWindowsMemory(): MemoryInfo {
+        return try {
+            val process = ProcessBuilder("wmic", "OS", "get", "TotalVisibleMemorySize,FreePhysicalMemory", "/format:list").start()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val lines = reader.readLines()
+            reader.close()
+            process.waitFor()
+            
+            var totalMemory = 0L
+            var freeMemory = 0L
+            
+            lines.forEach { line ->
+                when {
+                    line.startsWith("TotalVisibleMemorySize=") -> {
+                        totalMemory = line.substringAfter("=").toLongOrNull()?.times(1024) ?: 0L
+                    }
+                    line.startsWith("FreePhysicalMemory=") -> {
+                        freeMemory = line.substringAfter("=").toLongOrNull()?.times(1024) ?: 0L
+                    }
+                }
+            }
+            
+            val usedMemory = totalMemory - freeMemory
+            val usagePercentage = if (totalMemory > 0) (usedMemory.toDouble() / totalMemory.toDouble()) * 100 else 0.0
+            
+            MemoryInfo(
+                totalMemory = formatBytes(totalMemory),
+                availableMemory = formatBytes(freeMemory),
+                usedMemory = formatBytes(usedMemory),
+                usagePercentage = usagePercentage
+            )
+        } catch (e: Exception) {
+            getJavaMemory()
+        }
+    }
+    
+    private fun getWindowsCPU(): CPUInfo {
+        return try {
+            val process = ProcessBuilder("wmic", "cpu", "get", "Name,NumberOfCores,NumberOfLogicalProcessors", "/format:list").start()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val lines = reader.readLines()
+            reader.close()
+            process.waitFor()
+            
+            var cpuName = "Unknown CPU"
+            var cores = osBean.availableProcessors
+            var threads = osBean.availableProcessors
+            
+            lines.forEach { line ->
+                when {
+                    line.startsWith("Name=") -> {
+                        cpuName = line.substringAfter("=").trim()
+                    }
+                    line.startsWith("NumberOfCores=") -> {
+                        cores = line.substringAfter("=").toIntOrNull() ?: cores
+                    }
+                    line.startsWith("NumberOfLogicalProcessors=") -> {
+                        threads = line.substringAfter("=").toIntOrNull() ?: threads
+                    }
+                }
+            }
+            
+            val arch = System.getProperty("os.arch") ?: "Unknown"
+            
+            CPUInfo(
+                name = cpuName,
+                cores = cores,
+                threads = threads,
+                architecture = arch
+            )
+        } catch (e: Exception) {
+            getJavaCPU()
+        }
+    }
+    
+    private fun getWindowsGPU(): List<GPUInfo> {
+        return try {
+            val process = ProcessBuilder("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion", "/format:list").start()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val lines = reader.readLines()
+            reader.close()
+            process.waitFor()
+            
+            val gpuList = mutableListOf<GPUInfo>()
+            var currentName: String? = null
+            var currentMemory: String? = null
+            var currentDriver: String? = null
+            
+            lines.forEach { line ->
+                when {
+                    line.startsWith("Name=") && line.substringAfter("=").isNotBlank() -> {
+                        currentName = line.substringAfter("=").trim()
+                    }
+                    line.startsWith("AdapterRAM=") && line.substringAfter("=").isNotBlank() -> {
+                        val ram = line.substringAfter("=").toLongOrNull()
+                        currentMemory = if (ram != null && ram > 0) formatBytes(ram) else null
+                    }
+                    line.startsWith("DriverVersion=") && line.substringAfter("=").isNotBlank() -> {
+                        currentDriver = line.substringAfter("=").trim()
+                        
+                        // When we have all info for a GPU, add it to the list
+                        if (currentName != null) {
+                            gpuList.add(GPUInfo(
+                                name = currentName!!,
+                                vendor = "Unknown",
+                                memory = currentMemory,
+                                driver = currentDriver
+                            ))
+                            currentName = null
+                            currentMemory = null
+                            currentDriver = null
+                        }
+                    }
+                }
+            }
+            
+            gpuList
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+    
+    // Linux-specific implementations
+    private fun getLinuxMemory(): MemoryInfo {
+        return try {
+            val memInfoFile = File("/proc/meminfo")
+            if (memInfoFile.exists()) {
+                val lines = memInfoFile.readLines()
+                var totalMemory = 0L
+                var availableMemory = 0L
+                var freeMemory = 0L
+                var buffers = 0L
+                var cached = 0L
+                
+                lines.forEach { line ->
+                    when {
+                        line.startsWith("MemTotal:") -> {
+                            totalMemory = line.split("\\s+".toRegex())[1].toLongOrNull()?.times(1024) ?: 0L
+                        }
+                        line.startsWith("MemAvailable:") -> {
+                            availableMemory = line.split("\\s+".toRegex())[1].toLongOrNull()?.times(1024) ?: 0L
+                        }
+                        line.startsWith("MemFree:") -> {
+                            freeMemory = line.split("\\s+".toRegex())[1].toLongOrNull()?.times(1024) ?: 0L
+                        }
+                        line.startsWith("Buffers:") -> {
+                            buffers = line.split("\\s+".toRegex())[1].toLongOrNull()?.times(1024) ?: 0L
+                        }
+                        line.startsWith("Cached:") -> {
+                            cached = line.split("\\s+".toRegex())[1].toLongOrNull()?.times(1024) ?: 0L
+                        }
+                    }
+                }
+                
+                // If MemAvailable is not available, calculate it
+                if (availableMemory == 0L) {
+                    availableMemory = freeMemory + buffers + cached
+                }
+                
+                val usedMemory = totalMemory - availableMemory
+                val usagePercentage = if (totalMemory > 0) (usedMemory.toDouble() / totalMemory.toDouble()) * 100 else 0.0
+                
+                MemoryInfo(
+                    totalMemory = formatBytes(totalMemory),
+                    availableMemory = formatBytes(availableMemory),
+                    usedMemory = formatBytes(usedMemory),
+                    usagePercentage = usagePercentage
+                )
+            } else {
+                getJavaMemory()
+            }
+        } catch (e: Exception) {
+            getJavaMemory()
+        }
+    }
+    
+    private fun getLinuxCPU(): CPUInfo {
+        return try {
+            val cpuInfoFile = File("/proc/cpuinfo")
+            if (cpuInfoFile.exists()) {
+                val lines = cpuInfoFile.readLines()
+                var cpuName = "Unknown CPU"
+                var cores = 0
+                val processors = mutableSetOf<String>()
+                
+                lines.forEach { line ->
+                    when {
+                        line.startsWith("model name") -> {
+                            cpuName = line.substringAfter(":").trim()
+                        }
+                        line.startsWith("cpu cores") -> {
+                            cores = line.substringAfter(":").trim().toIntOrNull() ?: cores
+                        }
+                        line.startsWith("processor") -> {
+                            processors.add(line.substringAfter(":").trim())
+                        }
+                    }
+                }
+                
+                val threads = processors.size
+                if (cores == 0) cores = threads
+                
+                val arch = System.getProperty("os.arch") ?: "Unknown"
+                
+                CPUInfo(
+                    name = cpuName,
+                    cores = cores,
+                    threads = threads,
+                    architecture = arch
+                )
+            } else {
+                getJavaCPU()
+            }
+        } catch (e: Exception) {
+            getJavaCPU()
+        }
+    }
+    
+    private fun getLinuxGPU(): List<GPUInfo> {
+        return try {
+            val process = ProcessBuilder("lspci", "-v").start()
+            val reader = BufferedReader(InputStreamReader(process.inputStream))
+            val lines = reader.readLines()
+            reader.close()
+            process.waitFor()
+            
+            val gpuList = mutableListOf<GPUInfo>()
+            var currentGPU: String? = null
+            var currentVendor: String? = null
+            
+            lines.forEach { line ->
+                if (line.contains("VGA compatible controller") || line.contains("3D controller")) {
+                    val parts = line.split(":")
+                    if (parts.size >= 3) {
+                        currentVendor = parts[1].trim()
+                        currentGPU = parts[2].trim()
+                        
+                        gpuList.add(GPUInfo(
+                            name = currentGPU ?: "Unknown GPU",
+                            vendor = currentVendor ?: "Unknown"
+                        ))
+                    }
+                }
+            }
+            
+            gpuList
+        } catch (e: Exception) {
+            emptyList()
         }
     }
     
