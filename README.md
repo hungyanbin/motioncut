@@ -1,4 +1,4 @@
-# AI-Powered Video Trimmer
+# MotionCut
 
 An intelligent video trimming application built with Kotlin Multiplatform (KMP) that uses machine learning to automatically detect and track people in videos, enabling smart video editing across macOS and Windows platforms.
 
@@ -260,7 +260,7 @@ brew install ffmpeg
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd video-trimmer-kmp
+cd motioncut
 
 # Build the project
 ./gradlew build
@@ -272,25 +272,26 @@ cd video-trimmer-kmp
 ## 📁 Project Structure
 
 ```
-video-trimmer-kmp/
-├── shared/
-│   ├── src/commonMain/kotlin/
+motioncut/
+├── src/
+│   ├── commonMain/kotlin/com/yanbin/motioncut/
 │   │   ├── domain/
-│   │   │   ├── VideoProcessor.kt           # Core video processing
-│   │   │   ├── PersonTracker.kt            # ML tracking interface
+│   │   │   ├── VideoFile.kt               # Video file domain model
+│   │   │   ├── VideoProcessor.kt          # Core video processing
+│   │   │   ├── PersonTracker.kt           # ML tracking interface
 │   │   │   ├── MotionAnalyzer.kt          # Motion detection algorithms
 │   │   │   └── PersonIdentifier.kt        # Face recognition
-│   │   ├── ui/
-│   │   │   ├── MainScreen.kt              # Main application UI
-│   │   │   ├── VideoPlayer.kt             # Video playback component
-│   │   │   ├── Timeline.kt                # Timeline and scrubbing
-│   │   │   ├── PersonGallery.kt           # Person management UI
-│   │   │   └── ExportDialog.kt            # Export configuration
-│   │   └── utils/
-│   │       ├── VideoUtils.kt              # Video utilities
-│   │       ├── FileUtils.kt               # File operations
-│   │       └── MathUtils.kt               # Mathematical operations
-│   ├── src/jvmMain/kotlin/
+│   │   └── ui/
+│   │       ├── MainScreen.kt              # Main application UI
+│   │       └── components/
+│   │           ├── VideoPlayer.kt         # Video playback component
+│   │           ├── Timeline.kt            # Timeline and scrubbing
+│   │           ├── ControlPanel.kt        # Control panel component
+│   │           ├── FileDropZone.kt        # File drop zone component
+│   │           ├── PersonGallery.kt       # Person management UI
+│   │           └── ExportDialog.kt        # Export configuration
+│   ├── jvmMain/kotlin/
+│   │   ├── Main.kt                        # Application entry point
 │   │   ├── platform/
 │   │   │   ├── PlatformDetector.kt        # OS and hardware detection
 │   │   │   └── GPUDetector.kt             # GPU capability detection
@@ -298,17 +299,12 @@ video-trimmer-kmp/
 │   │       ├── ONNXTracker.kt             # ONNX Runtime implementation
 │   │       ├── CPUTracker.kt              # CPU-optimized inference
 │   │       └── ModelManager.kt            # Model loading and caching
-│   └── src/
-│       ├── macosMain/kotlin/
-│       │   ├── platform/MacOSTracker.kt   # Metal-optimized tracking
-│       │   └── video/MacOSProcessor.kt    # macOS video processing
-│       └── windowsMain/kotlin/
-│           ├── platform/WindowsTracker.kt # CUDA-optimized tracking
-│           └── video/WindowsProcessor.kt  # Windows video processing
-├── desktop/
-│   └── src/jvmMain/kotlin/
-│       ├── Main.kt                        # Application entry point
-│       └── DesktopApp.kt                  # Desktop-specific setup
+│   ├── macosMain/kotlin/
+│   │   ├── platform/MacOSTracker.kt       # Metal-optimized tracking
+│   │   └── video/MacOSProcessor.kt        # macOS video processing
+│   └── windowsMain/kotlin/
+│       ├── platform/WindowsTracker.kt     # CUDA-optimized tracking
+│       └── video/WindowsProcessor.kt      # Windows video processing
 ├── models/                                # Pre-trained ML models
 │   ├── person_detection.onnx
 │   ├── pose_estimation.onnx
@@ -317,6 +313,8 @@ video-trimmer-kmp/
 │   ├── API.md
 │   ├── ARCHITECTURE.md
 │   └── DEPLOYMENT.md
+├── build.gradle.kts                       # Build configuration
+├── settings.gradle.kts                    # Project settings
 └── gradle/
     └── libs.versions.toml                 # Dependency management
 ```
