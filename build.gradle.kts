@@ -52,16 +52,13 @@ compose.desktop {
             // Platform-specific configurations
             macOS {
                 bundleID = "com.yanbin.motioncut"
-                iconFile.set(project.file("src/jvmMain/resources/icon.icns"))
             }
-            
+
             windows {
-                iconFile.set(project.file("src/jvmMain/resources/icon.ico"))
                 upgradeUuid = "18159995-d967-4CD2-8885-77BFA97CFA9F"
             }
-            
+
             linux {
-                iconFile.set(project.file("src/jvmMain/resources/icon.png"))
             }
         }
         
