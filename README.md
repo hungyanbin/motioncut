@@ -10,8 +10,7 @@ This application leverages ML-based person detection and motion tracking to auto
 
 ```mermaid
 graph TD
-    A[KMP Shared Module] --> B[macOS Desktop]
-    A --> C[Windows Desktop]
+    A[KMP Shared Module] --> B[Desktop Application]
     
     subgraph "Shared Code 80%"
         D[Video Processing Logic]
@@ -22,8 +21,7 @@ graph TD
     end
     
     subgraph "Platform-Specific 20%"
-        I[macOS - CPU/Metal Optimized]
-        J[Windows - GPU/CUDA Accelerated]
+        I[Desktop - Cross-platform Optimized]
         K[Person Identification]
         L[Cross-Video Tracking]
     end
@@ -35,9 +33,8 @@ graph TD
     A --> H
     
     B --> I
-    C --> J
     B --> K
-    C --> L
+    B --> L
 ```
 
 ## 🚀 Key Features
@@ -47,8 +44,8 @@ graph TD
 - **Real-time Video Playback**: Preview videos with timeline scrubbing
 - **AI-Powered Person Detection**: Automatic person tracking using ML models
 - **Motion-Based Trimming**: Keep only segments with active movement
-- **Cross-Platform Support**: Optimized for both macOS and Windows
-- **GPU Acceleration**: Leverage NVIDIA RTX 3070 Ti on Windows
+- **Cross-Platform Support**: Desktop application with unified codebase
+- **GPU Acceleration**: Platform-specific optimization support
 
 ### Advanced Features
 - **Person Identification**: Track specific individuals across multiple videos
@@ -73,8 +70,7 @@ graph TD
 - **Motion Analysis**: Optical flow and temporal tracking
 
 ### Platform-Specific Optimizations
-- **macOS**: Metal Performance Shaders, CPU optimization
-- **Windows**: CUDA acceleration, TensorRT optimization
+- **Desktop**: Unified desktop implementation with platform detection
 
 ## 📋 Development Milestones
 
@@ -82,13 +78,13 @@ graph TD
 **Timeline: 2-3 weeks**
 
 **Objectives:**
-- Set up KMP project structure for macOS and Windows
+- Set up KMP project structure for desktop platforms
 - Implement drag & drop video interface
 - Add video playback functionality with timeline controls
 - Basic file management and export capabilities
 
 **Deliverables:**
-- [ ] KMP project setup with Compose Desktop
+- [x] KMP project setup with Compose Desktop
 - [ ] Cross-platform video player component
 - [ ] Drag & drop file handling
 - [ ] Timeline scrubbing and playback controls
@@ -130,8 +126,7 @@ expect class PersonTracker {
 
 // Platform-specific implementations
 actual class PersonTracker {
-    // macOS: Metal/CPU optimized
-    // Windows: CUDA/TensorRT accelerated
+    // Desktop: Cross-platform optimized with runtime detection
 }
 ```
 
@@ -299,12 +294,11 @@ motioncut/
 │   │       ├── ONNXTracker.kt             # ONNX Runtime implementation
 │   │       ├── CPUTracker.kt              # CPU-optimized inference
 │   │       └── ModelManager.kt            # Model loading and caching
-│   ├── macosMain/kotlin/
-│   │   ├── platform/MacOSTracker.kt       # Metal-optimized tracking
-│   │   └── video/MacOSProcessor.kt        # macOS video processing
-│   └── windowsMain/kotlin/
-│       ├── platform/WindowsTracker.kt     # CUDA-optimized tracking
-│       └── video/WindowsProcessor.kt      # Windows video processing
+│   └── desktopMain/kotlin/
+│       ├── Main.kt                        # Desktop application entry point
+│       └── platform/
+│           ├── OSInfo.kt                  # Platform information
+│           └── PlatformProviders.kt       # Platform-specific providers
 ├── models/                                # Pre-trained ML models
 │   ├── person_detection.onnx
 │   ├── pose_estimation.onnx
@@ -321,27 +315,20 @@ motioncut/
 
 ## ⚡ Performance Optimization
 
-### macOS (Development Platform)
-- **Processing Mode**: Preview/Development
-- **Resolution**: 720p for quick iteration
-- **Acceleration**: Metal Performance Shaders when available
-- **Memory Usage**: 2-4GB RAM
-- **Use Case**: Quick prototyping, UI development, algorithm testing
-
-### Windows (Production Platform)
-- **Processing Mode**: Full production quality
-- **Resolution**: Up to 4K with full quality
-- **Acceleration**: CUDA + TensorRT on RTX 3070 Ti
-- **Memory Usage**: 6-8GB VRAM + 4-8GB RAM
-- **Use Case**: Final video production, batch processing
+### Desktop Platform
+- **Processing Mode**: Adaptive based on hardware capabilities
+- **Resolution**: Up to 4K with quality scaling
+- **Acceleration**: Runtime detection and optimization
+- **Memory Usage**: 2-8GB RAM (varies by hardware)
+- **Use Case**: Cross-platform video processing and editing
 
 ### Performance Expectations
-| Platform | Video Resolution | Processing Speed | Memory Usage |
-|----------|------------------|------------------|--------------|
-| macOS    | 720p            | 15-30 FPS        | 2-4GB RAM    |
-| macOS    | 1080p           | 8-15 FPS         | 3-6GB RAM    |
-| Windows  | 1080p           | 60+ FPS          | 4GB VRAM     |
-| Windows  | 4K              | 15-30 FPS        | 6-8GB VRAM   |
+| Hardware Type | Video Resolution | Processing Speed | Memory Usage |
+|---------------|------------------|------------------|--------------|
+| Standard CPU  | 720p            | 15-30 FPS        | 2-4GB RAM    |
+| Standard CPU  | 1080p           | 8-15 FPS         | 3-6GB RAM    |
+| GPU Enabled   | 1080p           | 30-60 FPS        | 4-6GB RAM    |
+| GPU Enabled   | 4K              | 15-30 FPS        | 6-8GB RAM    |
 
 ## 🧪 Testing Strategy
 
@@ -374,16 +361,16 @@ motioncut/
 ### System Requirements
 
 #### Minimum Requirements
-- **OS**: macOS 10.15+ or Windows 10+
+- **OS**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 18.04+)
 - **RAM**: 8GB
 - **Storage**: 2GB free space
 - **CPU**: Intel i5 or AMD Ryzen 5 equivalent
 
 #### Recommended Requirements
-- **OS**: macOS 12+ or Windows 11+
+- **OS**: Windows 11+, macOS 12+, or Linux (Ubuntu 20.04+)
 - **RAM**: 16GB+
 - **Storage**: 10GB free space
-- **GPU**: NVIDIA RTX 3060+ (Windows) or Apple Silicon (macOS)
+- **GPU**: Dedicated GPU recommended (NVIDIA, AMD, or integrated)
 - **CPU**: Intel i7 or AMD Ryzen 7 equivalent
 
 ## 🤝 Contributing
