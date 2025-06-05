@@ -360,29 +360,75 @@ internal class WindowsOSInfoProvider : PlatformOSInfoProvider {
     }
 
     override fun getGPUInfo(): List<GPUInfo> {
+        // Try different wmic queries in order of preference, with retry logic
+        val queries = listOf(
+            // First try: Name, AdapterRAM, DriverVersion (without Manufacturer)
+            listOf("Name", "AdapterRAM", "DriverVersion"),
+            // Second try: Just Name and AdapterRAM
+            listOf("Name", "AdapterRAM"),
+            // Third try: Just Name
+            listOf("Name"),
+            // Last resort: Description only
+            listOf("Description")
+        )
+        
+        for (queryFields in queries) {
+            try {
+                val result = executeGPUQuery(queryFields)
+                if (result.isNotEmpty()) {
+                    return result
+                }
+            } catch (e: Exception) {
+                // Continue to next query if this one fails
+                continue
+            }
+        }
+        
+        // If all queries fail, return empty list
+        return emptyList()
+    }
+    
+    private fun executeGPUQuery(fields: List<String>): List<GPUInfo> {
         return try {
-            // Added "Manufacturer" to the wmic query
-            val process = ProcessBuilder("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion,Manufacturer", "/format:list").start()
+            val fieldsString = fields.joinToString(",")
+            val process = ProcessBuilder("wmic", "path", "win32_VideoController", "get", fieldsString, "/format:list").start()
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val lines = reader.readLines()
             reader.close()
-            process.waitFor()
+            val exitCode = process.waitFor()
+            
+            // If the command failed, throw an exception to try the next query
+            if (exitCode != 0) {
+                throw RuntimeException("wmic command failed with exit code: $exitCode")
+            }
 
             val gpuList = mutableListOf<GPUInfo>()
             var currentName: String? = null
             var currentMemory: String? = null
             var currentDriver: String? = null
-            var currentVendor: String? = null
+            var currentDescription: String? = null
 
             // Append a blank line to simplify processing the last GPU entry
             val effectiveLines = lines + listOf("")
 
             for (line in effectiveLines) {
                 if (line.isBlank()) { // A blank line indicates the end of properties for one GPU
-                    if (currentName != null) { // If we have a name, it's a valid GPU entry
+                    if (currentName != null || currentDescription != null) { // If we have a name or description, it's a valid GPU entry
+                        val gpuName = currentName ?: currentDescription ?: "Unknown GPU"
+                        
+                        // Extract vendor from the name/description
+                        val vendor = when {
+                            gpuName.contains("NVIDIA", ignoreCase = true) -> "NVIDIA"
+                            gpuName.contains("AMD", ignoreCase = true) ||
+                            gpuName.contains("Radeon", ignoreCase = true) -> "AMD"
+                            gpuName.contains("Intel", ignoreCase = true) -> "Intel"
+                            gpuName.contains("Microsoft", ignoreCase = true) -> "Microsoft"
+                            else -> "Unknown"
+                        }
+                        
                         gpuList.add(GPUInfo(
-                            name = currentName!!, // Name is essential
-                            vendor = currentVendor ?: "Unknown", // Use Manufacturer if found, else "Unknown"
+                            name = gpuName,
+                            vendor = vendor,
                             memory = currentMemory,
                             driver = currentDriver
                         ))
@@ -391,7 +437,7 @@ internal class WindowsOSInfoProvider : PlatformOSInfoProvider {
                     currentName = null
                     currentMemory = null
                     currentDriver = null
-                    currentVendor = null
+                    currentDescription = null
                     continue
                 }
 
@@ -405,21 +451,20 @@ internal class WindowsOSInfoProvider : PlatformOSInfoProvider {
                 if (value.isNotBlank()) {
                     when (key) {
                         "Name" -> currentName = value
+                        "Description" -> currentDescription = value
                         "AdapterRAM" -> {
                             val ram = value.toLongOrNull()
                             // Ensure ram is positive, otherwise treat as no info
                             currentMemory = if (ram != null && ram > 0) formatBytes(ram) else null
                         }
                         "DriverVersion" -> currentDriver = value
-                        "Manufacturer" -> currentVendor = value // Capture manufacturer for vendor
                     }
                 }
             }
 
             gpuList
         } catch (e: Exception) {
-            // In a real app, you might want to log e.printStackTrace()
-            emptyList() // Return empty list on error
+            throw e // Re-throw to trigger fallback to next query
         }
     }
     
