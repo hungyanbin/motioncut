@@ -86,7 +86,7 @@ graph TD
 **Deliverables:**
 - [x] KMP project setup with Compose Desktop
 - [ ] Cross-platform video player component
-- [ ] Drag & drop file handling
+- [x] Drag & drop file handling
 - [ ] Timeline scrubbing and playback controls
 - [ ] Basic video export functionality
 
@@ -271,18 +271,21 @@ motioncut/
 ├── src/
 │   ├── commonMain/kotlin/com/yanbin/motioncut/
 │   │   ├── domain/
-│   │   │   ├── VideoFile.kt               # Video file domain model
+│   │   │   ├── VideoFile.kt               # Video file domain model ✅
 │   │   │   ├── VideoProcessor.kt          # Core video processing
 │   │   │   ├── PersonTracker.kt           # ML tracking interface
 │   │   │   ├── MotionAnalyzer.kt          # Motion detection algorithms
 │   │   │   └── PersonIdentifier.kt        # Face recognition
+│   │   ├── platform/
+│   │   │   └── DragAndDropHandler.kt      # Cross-platform drag & drop interface ✅
 │   │   └── ui/
-│   │       ├── MainScreen.kt              # Main application UI
+│   │       ├── MainScreen.kt              # Main application UI ✅
+│   │       ├── SystemInfoScreen.kt        # System information screen ✅
 │   │       └── components/
 │   │           ├── VideoPlayer.kt         # Video playback component
 │   │           ├── Timeline.kt            # Timeline and scrubbing
 │   │           ├── ControlPanel.kt        # Control panel component
-│   │           ├── FileDropZone.kt        # File drop zone component
+│   │           ├── FileDropZone.kt        # File drop zone component ✅
 │   │           ├── PersonGallery.kt       # Person management UI
 │   │           └── ExportDialog.kt        # Export configuration
 │   ├── jvmMain/kotlin/
@@ -295,10 +298,11 @@ motioncut/
 │   │       ├── CPUTracker.kt              # CPU-optimized inference
 │   │       └── ModelManager.kt            # Model loading and caching
 │   └── desktopMain/kotlin/
-│       ├── Main.kt                        # Desktop application entry point
+│       ├── Main.kt                        # Desktop application entry point ✅
 │       └── platform/
-│           ├── OSInfo.kt                  # Platform information
-│           └── PlatformProviders.kt       # Platform-specific providers
+│           ├── OSInfo.kt                  # Platform information ✅
+│           ├── PlatformProviders.kt       # Platform-specific providers ✅
+│           └── DragAndDropHandler.kt      # Desktop drag & drop implementation ✅
 ├── models/                                # Pre-trained ML models
 │   ├── person_detection.onnx
 │   ├── pose_estimation.onnx
