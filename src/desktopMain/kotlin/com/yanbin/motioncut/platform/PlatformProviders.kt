@@ -358,51 +358,68 @@ internal class WindowsOSInfoProvider : PlatformOSInfoProvider {
             getJavaCPU()
         }
     }
-    
+
     override fun getGPUInfo(): List<GPUInfo> {
         return try {
-            val process = ProcessBuilder("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion", "/format:list").start()
+            // Added "Manufacturer" to the wmic query
+            val process = ProcessBuilder("wmic", "path", "win32_VideoController", "get", "Name,AdapterRAM,DriverVersion,Manufacturer", "/format:list").start()
             val reader = BufferedReader(InputStreamReader(process.inputStream))
             val lines = reader.readLines()
             reader.close()
             process.waitFor()
-            
+
             val gpuList = mutableListOf<GPUInfo>()
             var currentName: String? = null
             var currentMemory: String? = null
             var currentDriver: String? = null
-            
-            lines.forEach { line ->
-                when {
-                    line.startsWith("Name=") && line.substringAfter("=").isNotBlank() -> {
-                        currentName = line.substringAfter("=").trim()
+            var currentVendor: String? = null
+
+            // Append a blank line to simplify processing the last GPU entry
+            val effectiveLines = lines + listOf("")
+
+            for (line in effectiveLines) {
+                if (line.isBlank()) { // A blank line indicates the end of properties for one GPU
+                    if (currentName != null) { // If we have a name, it's a valid GPU entry
+                        gpuList.add(GPUInfo(
+                            name = currentName!!, // Name is essential
+                            vendor = currentVendor ?: "Unknown", // Use Manufacturer if found, else "Unknown"
+                            memory = currentMemory,
+                            driver = currentDriver
+                        ))
                     }
-                    line.startsWith("AdapterRAM=") && line.substringAfter("=").isNotBlank() -> {
-                        val ram = line.substringAfter("=").toLongOrNull()
-                        currentMemory = if (ram != null && ram > 0) formatBytes(ram) else null
-                    }
-                    line.startsWith("DriverVersion=") && line.substringAfter("=").isNotBlank() -> {
-                        currentDriver = line.substringAfter("=").trim()
-                        
-                        // When we have all info for a GPU, add it to the list
-                        if (currentName != null) {
-                            gpuList.add(GPUInfo(
-                                name = currentName!!,
-                                vendor = "Unknown",
-                                memory = currentMemory,
-                                driver = currentDriver
-                            ))
-                            currentName = null
-                            currentMemory = null
-                            currentDriver = null
+                    // Reset for the next potential GPU
+                    currentName = null
+                    currentMemory = null
+                    currentDriver = null
+                    currentVendor = null
+                    continue
+                }
+
+                val parts = line.split("=", limit = 2)
+                if (parts.size < 2) continue // Skip malformed lines
+
+                val key = parts[0].trim()
+                val value = parts[1].trim()
+
+                // Only assign the property if the value from wmic is not blank
+                if (value.isNotBlank()) {
+                    when (key) {
+                        "Name" -> currentName = value
+                        "AdapterRAM" -> {
+                            val ram = value.toLongOrNull()
+                            // Ensure ram is positive, otherwise treat as no info
+                            currentMemory = if (ram != null && ram > 0) formatBytes(ram) else null
                         }
+                        "DriverVersion" -> currentDriver = value
+                        "Manufacturer" -> currentVendor = value // Capture manufacturer for vendor
                     }
                 }
             }
-            
+
             gpuList
         } catch (e: Exception) {
-            emptyList()
+            // In a real app, you might want to log e.printStackTrace()
+            emptyList() // Return empty list on error
         }
     }
     
