@@ -8,7 +8,7 @@ import java.io.File
 /**
  * Desktop video trimming service using JavaCV
  */
-class VideoTrimmerService {
+class DesktopVideoTrimmerService : VideoTrimmerService {
     
     /**
      * Trim video to half its original length
@@ -18,12 +18,12 @@ class VideoTrimmerService {
      * @param onComplete Callback when trimming is complete
      * @param onError Callback when an error occurs
      */
-    suspend fun trimVideoToHalf(
+    override suspend fun trimVideoToHalf(
         inputPath: String,
         outputPath: String,
-        onProgress: (Float) -> Unit = {},
-        onComplete: () -> Unit = {},
-        onError: (String) -> Unit = {}
+        onProgress: (Float) -> Unit,
+        onComplete: () -> Unit,
+        onError: (String) -> Unit
     ) {
         withContext(Dispatchers.IO) {
             try {
@@ -110,4 +110,26 @@ class VideoTrimmerService {
             }
         }
     }
+    
+    /**
+     * Generate output path for trimmed video
+     */
+    override fun generateOutputPath(inputPath: String): String {
+        val file = File(inputPath)
+        val nameWithoutExtension = file.nameWithoutExtension
+        val extension = file.extension.ifEmpty { "mp4" } // Default to mp4 if no extension
+        val parentDir = file.parent ?: file.absoluteFile.parent ?: System.getProperty("user.home")
+        
+        // Ensure we have a valid filename
+        val safeName = if (nameWithoutExtension.isBlank()) "trimmed_video" else nameWithoutExtension
+        
+        return "$parentDir${File.separator}${safeName}_trimmed_half.$extension"
+    }
+}
+
+/**
+ * Platform-specific factory function for desktop
+ */
+actual fun createVideoTrimmerService(): VideoTrimmerService {
+    return DesktopVideoTrimmerService()
 }
