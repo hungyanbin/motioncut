@@ -170,29 +170,34 @@ actual fun VideoPlayerWithTrimming(
     
     // Completion Success Dialog
     if (showCompletionDialog) {
-        AlertDialog(
-            onDismissRequest = { showCompletionDialog = false },
-            title = {
-                Text("✅ Trimming Complete!")
-            },
-            text = {
-                Text(
-                    text = completionMessage,
-                    style = MaterialTheme.typography.body1
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = { showCompletionDialog = false },
-                    colors = ButtonDefaults.buttonColors(
-                        backgroundColor = MaterialTheme.colors.primary
-                    )
-                ) {
-                    Text("OK")
-                }
-            }
-        )
+        TrimmingCompleteDialog(onDismiss = { showCompletionDialog = false}, completionMessage)
     }
+}
+
+@Composable
+private fun TrimmingCompleteDialog(onDismiss: () -> Unit, completionMessage: String) {
+    AlertDialog(
+        onDismissRequest = { onDismiss() },
+        title = {
+            Text("✅ Trimming Complete!")
+        },
+        text = {
+            Text(
+                text = completionMessage,
+                style = MaterialTheme.typography.body1
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { onDismiss() },
+                colors = ButtonDefaults.buttonColors(
+                    backgroundColor = MaterialTheme.colors.primary
+                )
+            ) {
+                Text("OK")
+            }
+        }
+    )
 }
 
 /**

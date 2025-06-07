@@ -110,29 +110,4 @@ class VideoTrimmerService {
             }
         }
     }
-    
-    /**
-     * Get video duration in seconds
-     */
-    suspend fun getVideoDuration(videoPath: String): Double {
-        return withContext(Dispatchers.IO) {
-            var grabber: FFmpegFrameGrabber? = null
-            try {
-                grabber = FFmpegFrameGrabber(videoPath).apply {
-                    start()
-                }
-                val lengthInTime = grabber.lengthInTime
-                lengthInTime / 1_000_000.0 // Convert microseconds to seconds
-            } catch (e: Exception) {
-                0.0
-            } finally {
-                try {
-                    grabber?.stop()
-                    grabber?.release()
-                } catch (e: Exception) {
-                    // Ignore cleanup errors
-                }
-            }
-        }
-    }
 }
