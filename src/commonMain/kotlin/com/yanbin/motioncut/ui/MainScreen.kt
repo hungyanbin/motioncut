@@ -14,7 +14,7 @@ import com.yanbin.motioncut.domain.VideoFile
 import com.yanbin.motioncut.ui.components.FileDropZone
 import com.yanbin.motioncut.ui.components.FileInfoDisplay
 import com.yanbin.motioncut.platform.DragAndDropContainer
-import com.yanbin.motioncut.ui.components.MyVideoPlayer
+import com.yanbin.motioncut.ui.components.VideoPlayer
 
 enum class Screen {
     HOME,
@@ -145,7 +145,7 @@ fun HomeScreen(onNavigateToSystemInfo: () -> Unit) {
                 Spacer(modifier = Modifier.height(24.dp))
                 
                 // Video Player Component
-                MyVideoPlayer(
+                VideoPlayer(
                     videoFile = selectedVideoFile!!,
                     modifier = Modifier.fillMaxWidth(),
                     onPlayPause = { isPlaying ->

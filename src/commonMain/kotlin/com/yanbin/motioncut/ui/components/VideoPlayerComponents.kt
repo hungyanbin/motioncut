@@ -1,6 +1,5 @@
 package com.yanbin.motioncut.ui.components
 
-import VideoPlayer
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,10 +21,10 @@ import androidx.compose.ui.unit.sp
 import com.yanbin.motioncut.domain.VideoFile
 
 /**
- * Video player component with actual video playback capabilities using MediaPlayer-KMP
+ * Video player component with optimized frame-by-frame playback
  */
 @Composable
-fun MyVideoPlayer(
+fun VideoPlayer(
     videoFile: VideoFile,
     modifier: Modifier = Modifier,
     onPlayPause: (Boolean) -> Unit = {},
@@ -44,9 +43,10 @@ fun MyVideoPlayer(
                 .aspectRatio(16f / 9f) // Standard video aspect ratio
                 .background(Color.Black)
         ) {
-            // MediaPlayer-KMP video player
-            VideoPlayer(
-                url = videoFile.path,
+            // Optimized video display area with frame buffering
+            VideoDisplayArea(
+                videoFile = videoFile,
+                isPlaying = currentIsPlaying,
                 modifier = Modifier.fillMaxSize()
             )
             

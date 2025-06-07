@@ -29,14 +29,17 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
                 implementation(compose.components.uiToolingPreview)
-                // MediaPlayer-KMP for embedded video playback
-                implementation("io.github.khubaibkhan4:mediaplayer-kmp:1.0.0")
             }
         }
 
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
+                // JavaCV for optimized video processing with hardware acceleration
+                implementation("org.bytedeco:javacv-platform:1.5.9")
+                // Coroutines for video playback
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+                implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.7.3")
             }
         }
     }
@@ -45,6 +48,13 @@ kotlin {
 compose.desktop {
     application {
         mainClass = "MainKt"
+        
+        // JVM arguments for optimized video playback
+        jvmArgs += listOf(
+            "-Djava.awt.headless=false",  // Ensure we're not in headless mode
+            "-XX:+UseG1GC",               // Use G1 garbage collector for better performance
+            "-XX:MaxGCPauseMillis=10"     // Minimize GC pauses for smooth video playback
+        )
         
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
