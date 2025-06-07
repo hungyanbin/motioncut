@@ -14,6 +14,7 @@ import com.yanbin.motioncut.domain.VideoFile
 import com.yanbin.motioncut.ui.components.FileDropZone
 import com.yanbin.motioncut.ui.components.FileInfoDisplay
 import com.yanbin.motioncut.platform.DragAndDropContainer
+import com.yanbin.motioncut.ui.components.MyVideoPlayer
 
 enum class Screen {
     HOME,
@@ -143,28 +144,15 @@ fun HomeScreen(onNavigateToSystemInfo: () -> Unit) {
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Placeholder for future video processing controls
-                Card(
+                // Video Player Component
+                MyVideoPlayer(
+                    videoFile = selectedVideoFile!!,
                     modifier = Modifier.fillMaxWidth(),
-                    elevation = 2.dp
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            text = "Video Processing",
-                            style = MaterialTheme.typography.h6,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        
-                        Text(
-                            text = "Video player and processing controls will be available here in future updates.",
-                            style = MaterialTheme.typography.body2,
-                            color = MaterialTheme.colors.onSurface.copy(alpha = 0.7f)
-                        )
+                    onPlayPause = { isPlaying ->
+                        // Handle play/pause state changes
+                        println("Video ${if (isPlaying) "playing" else "paused"}")
                     }
-                }
+                )
             }
             }
         }

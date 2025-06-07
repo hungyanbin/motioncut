@@ -29,9 +29,11 @@ kotlin {
                 implementation(compose.ui)
                 implementation(compose.components.resources)
                 implementation(compose.components.uiToolingPreview)
+                // MediaPlayer-KMP for embedded video playback
+                implementation("io.github.khubaibkhan4:mediaplayer-kmp:1.0.0")
             }
         }
-        
+
         val desktopMain by getting {
             dependencies {
                 implementation(compose.desktop.currentOs)
