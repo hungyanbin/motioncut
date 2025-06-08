@@ -14,6 +14,7 @@ import com.yanbin.motioncut.domain.VideoFile
 import com.yanbin.motioncut.ui.components.FileDropZone
 import com.yanbin.motioncut.ui.components.FileInfoDisplay
 import com.yanbin.motioncut.platform.DragAndDropContainer
+import com.yanbin.motioncut.ui.video.VideoPlayerWithTrimming
 
 enum class Screen {
     HOME,
@@ -123,7 +124,7 @@ fun HomeScreen(onNavigateToSystemInfo: () -> Unit) {
                         style = MaterialTheme.typography.h4,
                         fontWeight = FontWeight.Bold
                     )
-                    
+
                     Button(
                         onClick = { selectedVideoFile = null },
                         colors = ButtonDefaults.buttonColors(

@@ -1,4 +1,4 @@
-package com.yanbin.motioncut.ui
+package com.yanbin.motioncut.ui.video
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
@@ -11,7 +11,6 @@ import androidx.compose.ui.unit.dp
 import com.yanbin.motioncut.domain.VideoFile
 import com.yanbin.motioncut.services.VideoTrimmerService
 import com.yanbin.motioncut.services.createVideoTrimmerService
-import com.yanbin.motioncut.ui.components.VideoPlayer
 import kotlinx.coroutines.launch
 
 /**
@@ -211,19 +210,8 @@ fun VideoPlayerWithTrimming(
     videoFile: VideoFile,
     modifier: Modifier = Modifier
 ) {
-    DefaultVideoPlayerWithTrimming(videoFile, modifier)
-}
-
-/**
- * Default implementation that uses the platform-specific trimmer service
- */
-@Composable
-fun DefaultVideoPlayerWithTrimming(
-    videoFile: VideoFile,
-    modifier: Modifier = Modifier
-) {
     val trimmerService = remember { createVideoTrimmerService() }
-    
+
     VideoPlayerWithTrimmingContent(
         videoFile = videoFile,
         trimmerService = trimmerService,

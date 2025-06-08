@@ -1,46 +1,52 @@
-package com.yanbin.motioncut.ui.components
+package com.yanbin.motioncut.ui.video
 
 import androidx.compose.ui.graphics.ImageBitmap
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * Desktop implementation of optimized video player with hardware acceleration and frame buffering
+ * Desktop implementation of optimized video surface with hardware acceleration and frame buffering
  * Performance optimizations:
  * - Circular frame buffer (10 frames ahead)
  * - Background decoding thread
  * - Hardware-accelerated decoding when available
  * - Adaptive frame skipping for real-time playback
  */
-actual class VideoPlayer actual constructor(private val videoPath: String) {
+actual class VideoSurface actual constructor(private val videoPath: String) {
     private var grabber: FFmpegFrameGrabber? = null
     private var converter: Java2DFrameConverter? = null
     private var playbackJob: Job? = null
     private var decodingJob: Job? = null
     private var frameCallback: ((ImageBitmap?) -> Unit)? = null
-    
+
     // Frame buffering for smooth playback
     private val frameBuffer = ConcurrentLinkedQueue<ImageBitmap>()
     private val maxBufferSize = 10
     private val bufferMutex = Mutex()
-    
+
     // Playback timing
     private var frameRate: Double = 30.0
     private var frameDelay: Long = 33L // ~30 FPS
     private var isInitialized = false
     private var shouldPlay = false
-    
+
     // Performance monitoring
     private var lastFrameTime = 0L
     private var droppedFrames = 0
-    
+
     actual suspend fun initialize(onFrameUpdate: (ImageBitmap?) -> Unit) {
         frameCallback = onFrameUpdate
-        
+
         withContext(Dispatchers.IO) {
             try {
                 grabber = FFmpegFrameGrabber(videoPath).apply {
@@ -50,11 +56,11 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                     // pixelFormat = org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGB24
                     start()
                 }
-                
+
                 converter = Java2DFrameConverter()
                 frameRate = grabber?.frameRate?.takeIf { it > 0 } ?: 30.0
                 frameDelay = (1000 / frameRate).toLong()
-                
+
                 // Load first frame as thumbnail - try multiple frames if needed
                 var firstFrame = grabber?.grab()
                 var attempts = 0
@@ -62,23 +68,23 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                     firstFrame = grabber?.grab()
                     attempts++
                 }
-                
+
                 if (firstFrame != null && firstFrame.image != null) {
                     val bufferedImage = converter?.convert(firstFrame)
                     val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
-                    
+
                     withContext(Dispatchers.Main) {
                         frameCallback?.invoke(imageBitmap)
                     }
                 }
-                
+
                 // Reset to beginning
                 grabber?.restart()
                 isInitialized = true
-                
+
                 // Start background frame decoding
                 startFrameDecoding()
-                
+
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
                     frameCallback?.invoke(null)
@@ -87,7 +93,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
             }
         }
     }
-    
+
     /**
      * Background frame decoding to keep buffer filled
      */
@@ -103,7 +109,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                             if (frame.image != null) {
                                 val bufferedImage = converter?.convert(frame)
                                 val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
-                                
+
                                 if (imageBitmap != null) {
                                     bufferMutex.withLock {
                                         frameBuffer.offer(imageBitmap)
@@ -130,22 +136,22 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
 
     actual fun play() {
         if (!isInitialized) return
-        
+
         shouldPlay = true
         playbackJob?.cancel()
         playbackJob = CoroutineScope(Dispatchers.Main).launch {
             lastFrameTime = System.currentTimeMillis()
-            
+
             while (isActive && shouldPlay) {
                 val currentTime = System.currentTimeMillis()
                 val timeSinceLastFrame = currentTime - lastFrameTime
-                
+
                 // Check if it's time for next frame
                 if (timeSinceLastFrame >= frameDelay) {
                     val frame = bufferMutex.withLock {
                         frameBuffer.poll()
                     }
-                    
+
                     if (frame != null) {
                         frameCallback?.invoke(frame)
                         lastFrameTime = currentTime
@@ -155,7 +161,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                         lastFrameTime = currentTime
                     }
                 }
-                
+
                 // Adaptive delay to maintain frame rate
                 val nextFrameDelay = maxOf(1L, frameDelay - (System.currentTimeMillis() - currentTime))
                 delay(nextFrameDelay)
@@ -173,16 +179,14 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
         shouldPlay = false
         playbackJob?.cancel()
         decodingJob?.cancel()
-        
+
         try {
             grabber?.stop()
             grabber?.release()
         } catch (e: Exception) {
             // Ignore cleanup errors
         }
-        
+
         frameBuffer.clear()
     }
 }
-
-
