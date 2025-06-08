@@ -180,9 +180,10 @@ private class OptimizedVideoPlayer(private val videoPath: String) {
         withContext(Dispatchers.IO) {
             try {
                 grabber = FFmpegFrameGrabber(videoPath).apply {
-                    // Enable hardware acceleration when available
-                    setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264)
-                    pixelFormat = org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGB24
+                    // Don't force specific codec - let FFmpeg auto-detect
+                    // setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264)
+                    // Use default pixel format for better compatibility
+                    // pixelFormat = org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGB24
                     start()
                 }
                 
@@ -190,8 +191,14 @@ private class OptimizedVideoPlayer(private val videoPath: String) {
                 frameRate = grabber?.frameRate?.takeIf { it > 0 } ?: 30.0
                 frameDelay = (1000 / frameRate).toLong()
                 
-                // Load first frame as thumbnail
-                val firstFrame = grabber?.grab()
+                // Load first frame as thumbnail - try multiple frames if needed
+                var firstFrame = grabber?.grab()
+                var attempts = 0
+                while (firstFrame != null && firstFrame.image == null && attempts < 10) {
+                    firstFrame = grabber?.grab()
+                    attempts++
+                }
+                
                 if (firstFrame != null && firstFrame.image != null) {
                     val bufferedImage = converter?.convert(firstFrame)
                     val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
@@ -227,15 +234,20 @@ private class OptimizedVideoPlayer(private val videoPath: String) {
                     // Only decode if buffer has space
                     if (frameBuffer.size < maxBufferSize) {
                         val frame = grabber?.grab()
-                        if (frame != null && frame.image != null) {
-                            val bufferedImage = converter?.convert(frame)
-                            val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
-                            
-                            if (imageBitmap != null) {
-                                bufferMutex.withLock {
-                                    frameBuffer.offer(imageBitmap)
+                        if (frame != null) {
+                            // Check if frame has image data
+                            if (frame.image != null) {
+                                val bufferedImage = converter?.convert(frame)
+                                val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
+                                
+                                if (imageBitmap != null) {
+                                    bufferMutex.withLock {
+                                        frameBuffer.offer(imageBitmap)
+                                    }
                                 }
                             }
+                            // If frame.image is null, it might be an audio frame or metadata
+                            // Continue to next frame without restarting
                         } else {
                             // End of video, restart
                             grabber?.restart()
