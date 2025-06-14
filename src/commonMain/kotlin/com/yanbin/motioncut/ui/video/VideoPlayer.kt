@@ -4,7 +4,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +19,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
@@ -34,7 +34,6 @@ import com.yanbin.motioncut.ui.widget.Pause
 import java.io.File
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
 
 /**
@@ -88,17 +87,20 @@ private fun PlayButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val alphaInPausing = 0.5f
+    val alphaInPlaying = 0.2f
+    val alphaValue = if (isPlaying) alphaInPlaying else alphaInPausing
     Box(
         modifier = modifier
             .size(80.dp)
             .clip(CircleShape)
             .background(
-                Color.White.copy(alpha = 0.9f),
+                Color.White.copy(alpha = alphaValue),
                 CircleShape
             )
             .border(
                 width = 2.dp,
-                color = MaterialTheme.colors.primary,
+                color = MaterialTheme.colors.primary.copy(alpha = alphaValue),
                 shape = CircleShape
             )
             .clickable { onClick() },
@@ -108,7 +110,7 @@ private fun PlayButton(
             imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Default.PlayArrow,
             contentDescription = if (isPlaying) "Pause" else "Play",
             modifier = Modifier.size(40.dp),
-            tint = MaterialTheme.colors.primary
+            tint = MaterialTheme.colors.primary.copy(alpha = alphaValue)
         )
     }
 }
@@ -250,7 +252,7 @@ fun DrawScope.drawOptimizedVideoFrame(bitmap: ImageBitmap?, orientation: Int) {
     // Apply rotation and draw the image
     rotate(
         degrees = orientation.toFloat(),
-        pivot = androidx.compose.ui.geometry.Offset(centerX, centerY)
+        pivot = Offset(centerX, centerY)
     ) {
         // Center the original (unrotated) frame
         val offsetX = centerX - scaledWidth / 2
@@ -370,18 +372,12 @@ fun PlaceholderDisplay(videoFile: VideoFile) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         Text(
-            text = "Optimized Video Ready",
+            text = "Video Ready",
             color = Color.White,
             fontSize = 20.sp,
             fontWeight = FontWeight.Bold
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Text(
-            text = "Hardware-accelerated playback",
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 14.sp
-        )
-        Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = videoFile.name,
             color = Color.White.copy(alpha = 0.6f),
