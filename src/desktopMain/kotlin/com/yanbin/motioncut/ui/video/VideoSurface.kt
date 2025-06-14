@@ -273,55 +273,6 @@ internal fun BufferedImage.toOptimizedImageBitmap(): ImageBitmap {
 }
 
 /**
- * Alternative direct conversion - use this if you want to experiment with manual pixel manipulation
- */
-internal fun BufferedImage.toOptimizedImageBitmapDirect(): ImageBitmap {
-    return when (type) {
-        BufferedImage.TYPE_INT_RGB, BufferedImage.TYPE_INT_ARGB -> {
-            toImageBitmapDirect()
-        }
-        else -> {
-            toCompatibleFormat().toImageBitmapDirect()
-        }
-    }
-}
-
-/**
- * Direct conversion using pixel data - fastest method
- */
-private fun BufferedImage.toImageBitmapDirect(): ImageBitmap {
-    val width = width
-    val height = height
-    val hasAlpha = colorModel.hasAlpha()
-    
-    // Get pixel data directly from BufferedImage
-    val pixels = IntArray(width * height)
-    getRGB(0, 0, width, height, pixels, 0, width)
-    
-    // Convert IntArray to ByteArray for Skia (RGBA format)
-    val bytes = ByteArray(pixels.size * 4)
-    for (i in pixels.indices) {
-        val argb = pixels[i]
-        val baseIndex = i * 4
-        bytes[baseIndex] = ((argb shr 16) and 0xFF).toByte()     // R
-        bytes[baseIndex + 1] = ((argb shr 8) and 0xFF).toByte()  // G
-        bytes[baseIndex + 2] = (argb and 0xFF).toByte()          // B
-        bytes[baseIndex + 3] = ((argb shr 24) and 0xFF).toByte() // A
-    }
-    
-    // Create Skia Image directly from bytes
-    val imageInfo = org.jetbrains.skia.ImageInfo.makeN32(
-        width,
-        height,
-        if (hasAlpha) org.jetbrains.skia.ColorAlphaType.UNPREMUL
-        else org.jetbrains.skia.ColorAlphaType.OPAQUE
-    )
-    
-    val skImage = org.jetbrains.skia.Image.makeRaster(imageInfo, bytes, width * 4)
-    return skImage.toComposeImageBitmap()
-}
-
-/**
  * Convert BufferedImage to a compatible format for fast processing
  */
 private fun BufferedImage.toCompatibleFormat(): BufferedImage {
