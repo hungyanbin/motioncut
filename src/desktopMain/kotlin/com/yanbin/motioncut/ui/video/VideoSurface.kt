@@ -1,30 +1,28 @@
 package com.yanbin.motioncut.ui.video
 
 import androidx.compose.ui.graphics.ImageBitmap
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
-import java.awt.Graphics2D
-import java.awt.RenderingHints
-import java.awt.geom.AffineTransform
 import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
- * Desktop implementation of optimized video surface with hardware acceleration and frame buffering
+ * Desktop implementation of optimized video surface with parallel pipeline processing
  * Performance optimizations:
+ * - Parallel 3-stage pipeline: Frame Grabbing -> Frame Conversion -> Image Bitmap Optimization
  * - Circular frame buffer (10 frames ahead)
- * - Background decoding thread
+ * - Background processing with separate threads for each pipeline stage
  * - Hardware-accelerated decoding when available
  * - Adaptive frame skipping for real-time playback
+ *
+ * Pipeline Architecture:
+ * Thread 1: grabber?.grab() -> Frame N+2
+ * Thread 2: toOptimizedImageBitmap() -> Frame N
  */
 actual class VideoSurface actual constructor(private val videoPath: String) {
     private var grabber: FFmpegFrameGrabber? = null
@@ -35,8 +33,15 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
 
     // Frame buffering for smooth playback
     private val frameBuffer = ConcurrentLinkedQueue<ImageBitmap>()
-    private val maxBufferSize = 10
+    private val maxBufferSize = 200
     private val bufferMutex = Mutex()
+
+    // Pipeline channels for parallel processing
+    private var bufferedImageChannel: Channel<BufferedImage>? = null
+    
+    // Pipeline jobs
+    private var frameGrabJob: Job? = null
+    private var imageBitmapJob: Job? = null
 
     // Playback timing
     private var frameRate: Double = 30.0
@@ -104,44 +109,59 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
     }
 
     /**
-     * Background frame decoding to keep buffer filled
+     * Background frame decoding with parallel pipeline processing
+     * Pipeline: Frame Grabbing -> Frame Conversion -> Image Bitmap Optimization
      */
     private fun startFrameDecoding() {
-        decodingJob = CoroutineScope(Dispatchers.IO).launch {
+        // Initialize channels for pipeline communication
+        bufferedImageChannel = Channel<BufferedImage>(capacity = 3)
+        
+        // Stage 1: Frame Grabbing Thread
+        frameGrabJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive && isInitialized) {
                 try {
-                    // Only decode if buffer has space
-                    if (frameBuffer.size < maxBufferSize) {
-                        val frame = grabber?.grab()
-                        if (frame != null) {
-                            // Check if frame has image data
-                            if (frame.image != null) {
-                                val bufferedImage = converter?.convert(frame)
-//                                val rotatedImage = bufferedImage?.let { applyRotation(it, videoRotation) }
-                                val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
-
-                                if (imageBitmap != null) {
-                                    bufferMutex.withLock {
-                                        frameBuffer.offer(imageBitmap)
-                                    }
-                                }
-                            }
-                            // If frame.image is null, it might be an audio frame or metadata
-                            // Continue to next frame without restarting
-                        } else {
-                            // End of video, restart
-                            grabber?.restart()
+                    val frame = grabber?.grab()
+                    if (frame != null && frame.image != null) {
+                        val bufferedImage = converter?.convert(frame)
+                        if (bufferedImage != null) {
+                            bufferedImageChannel?.send(bufferedImage)
                         }
-                    } else {
-                        // Buffer full, wait a bit
-                        delay(frameDelay / 2)
+                    } else if (frame == null) {
+                        // End of video, restart
+                        grabber?.restart()
                     }
+                    // If frame.image is null, it might be an audio frame - continue
                 } catch (e: Exception) {
-                    // Handle decoding errors gracefully
+                    // Handle grabbing errors gracefully
                     delay(frameDelay)
                 }
             }
         }
+        
+        // Stage 2: Multiple Image Bitmap Optimization Workers
+        imageBitmapJob = CoroutineScope(Dispatchers.IO).launch {
+                while (isActive && isInitialized) {
+                    try {
+                        // Only process if buffer has space
+                        if (frameBuffer.size < maxBufferSize) {
+                            val bufferedImage = bufferedImageChannel?.receive()
+                            if (bufferedImage != null) {
+                                val imageBitmap = bufferedImage.toOptimizedImageBitmap()
+                                bufferMutex.withLock {
+                                    frameBuffer.offer(imageBitmap)
+                                }
+                            }
+                        } else {
+                            // Buffer full, wait a bit before processing next frame
+                            delay(frameDelay / 2)
+                        }
+                    } catch (e: Exception) {
+                        // Handle bitmap optimization errors gracefully
+                        delay(frameDelay)
+                    }
+                }
+            }
+
     }
 
     actual fun play() {
@@ -183,12 +203,22 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
         shouldPlay = false
         playbackJob?.cancel()
         playbackJob = null
+        
+        // Pause pipeline jobs but don't cancel them completely
+        // They will continue buffering frames in the background
     }
 
     actual fun stop() {
         shouldPlay = false
         playbackJob?.cancel()
         decodingJob?.cancel()
+        
+        // Cancel all pipeline jobs
+        frameGrabJob?.cancel()
+        imageBitmapJob?.cancel()
+        
+        // Close channels
+        bufferedImageChannel?.close()
 
         try {
             grabber?.stop()
@@ -198,6 +228,11 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
         }
 
         frameBuffer.clear()
+        
+        // Reset pipeline components
+        bufferedImageChannel = null
+        frameGrabJob = null
+        imageBitmapJob = null
     }
 
     /**
@@ -215,54 +250,87 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
             0 // Default to no rotation on error
         }
     }
+}
 
-    /**
-     * Apply rotation to BufferedImage
-     */
-    private fun applyRotation(image: BufferedImage, rotation: Int): BufferedImage {
-        if (rotation == 0) return image
-
-        val radians = Math.toRadians(rotation.toDouble())
-        val sin = Math.abs(Math.sin(radians))
-        val cos = Math.abs(Math.cos(radians))
-
-        val originalWidth = image.width
-        val originalHeight = image.height
-
-        // Calculate new dimensions after rotation
-        val newWidth = (originalWidth * cos + originalHeight * sin).toInt()
-        val newHeight = (originalWidth * sin + originalHeight * cos).toInt()
-
-        // Create new image with rotated dimensions
-        val rotatedImage = BufferedImage(newWidth, newHeight, image.type)
-        val g2d: Graphics2D = rotatedImage.createGraphics()
-
-        try {
-            // Set rendering hints for better quality
-            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-            g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
-            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-
-            // Create transformation
-            val transform = AffineTransform()
-            
-            // Translate to center of new image
-            transform.translate(newWidth / 2.0, newHeight / 2.0)
-            
-            // Apply rotation
-            transform.rotate(radians)
-            
-            // Translate back by half of original image size
-            transform.translate(-originalWidth / 2.0, -originalHeight / 2.0)
-
-            // Apply transformation and draw image
-            g2d.transform = transform
-            g2d.drawImage(image, 0, 0, null)
-
-        } finally {
-            g2d.dispose()
+/**
+ * Optimized BufferedImage to ImageBitmap conversion
+ * Performance improvements:
+ * 1. Direct pixel data access - no PNG encoding/decoding
+ * 2. Efficient color space conversion
+ * 3. Minimal memory allocation
+ */
+internal fun BufferedImage.toOptimizedImageBitmap(): ImageBitmap {
+    return when (type) {
+        BufferedImage.TYPE_INT_RGB, BufferedImage.TYPE_INT_ARGB -> {
+            // Fast path: Use built-in extension function which handles color mapping correctly
+            this.toComposeImageBitmap()
         }
-
-        return rotatedImage
+        else -> {
+            // Fallback: Convert to compatible format first, then use fast path
+            toCompatibleFormat().toComposeImageBitmap()
+        }
     }
+}
+
+/**
+ * Alternative direct conversion - use this if you want to experiment with manual pixel manipulation
+ */
+internal fun BufferedImage.toOptimizedImageBitmapDirect(): ImageBitmap {
+    return when (type) {
+        BufferedImage.TYPE_INT_RGB, BufferedImage.TYPE_INT_ARGB -> {
+            toImageBitmapDirect()
+        }
+        else -> {
+            toCompatibleFormat().toImageBitmapDirect()
+        }
+    }
+}
+
+/**
+ * Direct conversion using pixel data - fastest method
+ */
+private fun BufferedImage.toImageBitmapDirect(): ImageBitmap {
+    val width = width
+    val height = height
+    val hasAlpha = colorModel.hasAlpha()
+    
+    // Get pixel data directly from BufferedImage
+    val pixels = IntArray(width * height)
+    getRGB(0, 0, width, height, pixels, 0, width)
+    
+    // Convert IntArray to ByteArray for Skia (RGBA format)
+    val bytes = ByteArray(pixels.size * 4)
+    for (i in pixels.indices) {
+        val argb = pixels[i]
+        val baseIndex = i * 4
+        bytes[baseIndex] = ((argb shr 16) and 0xFF).toByte()     // R
+        bytes[baseIndex + 1] = ((argb shr 8) and 0xFF).toByte()  // G
+        bytes[baseIndex + 2] = (argb and 0xFF).toByte()          // B
+        bytes[baseIndex + 3] = ((argb shr 24) and 0xFF).toByte() // A
+    }
+    
+    // Create Skia Image directly from bytes
+    val imageInfo = org.jetbrains.skia.ImageInfo.makeN32(
+        width,
+        height,
+        if (hasAlpha) org.jetbrains.skia.ColorAlphaType.UNPREMUL
+        else org.jetbrains.skia.ColorAlphaType.OPAQUE
+    )
+    
+    val skImage = org.jetbrains.skia.Image.makeRaster(imageInfo, bytes, width * 4)
+    return skImage.toComposeImageBitmap()
+}
+
+/**
+ * Convert BufferedImage to a compatible format for fast processing
+ */
+private fun BufferedImage.toCompatibleFormat(): BufferedImage {
+    val compatibleImage = BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB)
+    val g2d = compatibleImage.createGraphics()
+    try {
+        g2d.drawImage(this, 0, 0, null)
+    } finally {
+        g2d.dispose()
+    }
+    return compatibleImage
 }
