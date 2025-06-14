@@ -3,27 +3,11 @@ package com.yanbin.motioncut.ui.video
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import kotlinx.coroutines.*
-import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.flow.*
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
-import java.util.concurrent.ConcurrentLinkedQueue
 
-/**
- * Desktop implementation of optimized video surface with parallel pipeline processing
- * Performance optimizations:
- * - Parallel 3-stage pipeline: Frame Grabbing -> Frame Conversion -> Image Bitmap Optimization
- * - Circular frame buffer (10 frames ahead)
- * - Background processing with separate threads for each pipeline stage
- * - Hardware-accelerated decoding when available
- * - Adaptive frame skipping for real-time playback
- *
- * Pipeline Architecture:
- * Thread 1: grabber?.grab() -> Frame N+2
- * Thread 2: toOptimizedImageBitmap() -> Frame N
- */
 actual class VideoSurface actual constructor(private val videoPath: String) {
     private var grabber: FFmpegFrameGrabber? = null
     private var converter: Java2DFrameConverter? = null
@@ -31,29 +15,30 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
     private var decodingJob: Job? = null
     private var frameCallback: ((ImageBitmap, Int) -> Unit)? = null
 
-    // Frame buffering for smooth playback
-    private val frameBuffer = ConcurrentLinkedQueue<ImageBitmap>()
-    private val maxBufferSize = 200
-    private val bufferMutex = Mutex()
+    // Frame buffering for smooth playback with timestamp support
+    private val frameBuffer = TimestampFrameBuffer(defaultCapacity = 200)
+    private var currentFrameTimestamp = 0L
 
-    // Pipeline channels for parallel processing
-    private var bufferedImageChannel: Channel<BufferedImage>? = null
+    // Flow-based frame processing
+    private var frameFlow: Flow<Frame>? = null
+    private var prefetchJob: Job? = null
     
-    // Pipeline jobs
-    private var frameGrabJob: Job? = null
-    private var imageBitmapJob: Job? = null
+    // State tracking
+    private var isEndOfVideo = false
 
     // Playback timing
     private var frameRate: Double = 30.0
     private var frameDelay: Long = 33L // ~30 FPS
     private var isInitialized = false
     private var shouldPlay = false
+    
+    // Real-time playback control
+    private var videoStartTime: Long = 0L // System time when video playback started
 
     // Video rotation handling
     private var videoRotation: Int = 0 // Rotation angle in degrees
 
     // Performance monitoring
-    private var lastFrameTime = 0L
     private var droppedFrames = 0
 
     actual suspend fun initialize(onFrameUpdate: (ImageBitmap, Int) -> Unit) {
@@ -76,31 +61,13 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
                 // Detect video rotation from metadata
                 videoRotation = detectVideoRotation(grabber)
 
-                // Load first frame as thumbnail - try multiple frames if needed
-                var firstFrame = grabber?.grab()
-                var attempts = 0
-                while (firstFrame != null && firstFrame.image == null && attempts < 10) {
-                    firstFrame = grabber?.grab()
-                    attempts++
-                }
-
-                if (firstFrame != null && firstFrame.image != null) {
-                    val bufferedImage = converter?.convert(firstFrame)
-                    val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
-
-                    if (imageBitmap != null) {
-                        withContext(Dispatchers.Main) {
-                            frameCallback?.invoke(imageBitmap, videoRotation)
-                        }
-                    }
-                }
-
                 // Reset to beginning
-                grabber?.restart()
+                currentFrameTimestamp = 0L
                 isInitialized = true
 
-                // Start background frame decoding
-                startFrameDecoding()
+                // Create frame flow and start prefetching
+                createFrameFlow()
+                startPrefetching()
 
             } catch (e: Exception) {
                 throw e
@@ -109,59 +76,47 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
     }
 
     /**
-     * Background frame decoding with parallel pipeline processing
-     * Pipeline: Frame Grabbing -> Frame Conversion -> Image Bitmap Optimization
+     * Create a Flow that produces video frames on-demand
      */
-    private fun startFrameDecoding() {
-        // Initialize channels for pipeline communication
-        bufferedImageChannel = Channel<BufferedImage>(capacity = 3)
-        
-        // Stage 1: Frame Grabbing Thread
-        frameGrabJob = CoroutineScope(Dispatchers.IO).launch {
-            while (isActive && isInitialized) {
+    private fun createFrameFlow() {
+        frameFlow = flow {
+            while (isInitialized && !isEndOfVideo) {
                 try {
                     val frame = grabber?.grab()
                     if (frame != null && frame.image != null) {
                         val bufferedImage = converter?.convert(frame)
                         if (bufferedImage != null) {
-                            bufferedImageChannel?.send(bufferedImage)
+                            val imageBitmap = bufferedImage.toOptimizedImageBitmap()
+                            val timestamp = (grabber?.timestamp ?: 0L) / 1000L // Convert to milliseconds
+                            val videoFrame = Frame(imageBitmap, timestamp)
+                            emit(videoFrame)
                         }
                     } else if (frame == null) {
-                        // End of video, restart
-                        grabber?.restart()
+                        // End of video reached
+                        isEndOfVideo = true
+                        break
                     }
-                    // If frame.image is null, it might be an audio frame - continue
                 } catch (e: Exception) {
                     // Handle grabbing errors gracefully
                     delay(frameDelay)
                 }
             }
-        }
-        
-        // Stage 2: Multiple Image Bitmap Optimization Workers
-        imageBitmapJob = CoroutineScope(Dispatchers.IO).launch {
-                while (isActive && isInitialized) {
-                    try {
-                        // Only process if buffer has space
-                        if (frameBuffer.size < maxBufferSize) {
-                            val bufferedImage = bufferedImageChannel?.receive()
-                            if (bufferedImage != null) {
-                                val imageBitmap = bufferedImage.toOptimizedImageBitmap()
-                                bufferMutex.withLock {
-                                    frameBuffer.offer(imageBitmap)
-                                }
-                            }
-                        } else {
-                            // Buffer full, wait a bit before processing next frame
-                            delay(frameDelay / 2)
-                        }
-                    } catch (e: Exception) {
-                        // Handle bitmap optimization errors gracefully
-                        delay(frameDelay)
-                    }
+        }.flowOn(Dispatchers.IO)
+    }
+    
+    /**
+     * Start prefetching frames until buffer is full
+     */
+    private fun startPrefetching() {
+        prefetchJob = CoroutineScope(Dispatchers.IO).launch {
+            frameFlow?.collect { frame ->
+                while (frameBuffer.wouldRemoveFrameAtOrAfter(currentFrameTimestamp)) {
+                    // Delay and try again
+                    delay(30)
                 }
+                frameBuffer.appendFrame(frame)
             }
-
+        }
     }
 
     actual fun play() {
@@ -169,32 +124,41 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
 
         shouldPlay = true
         playbackJob?.cancel()
+        
+        // Set video start time, accounting for current position if resuming
+        videoStartTime = System.currentTimeMillis() - currentFrameTimestamp
+        
         playbackJob = CoroutineScope(Dispatchers.Main).launch {
-            lastFrameTime = System.currentTimeMillis()
-
             while (isActive && shouldPlay) {
                 val currentTime = System.currentTimeMillis()
-                val timeSinceLastFrame = currentTime - lastFrameTime
-
-                // Check if it's time for next frame
-                if (timeSinceLastFrame >= frameDelay) {
-                    val frame = bufferMutex.withLock {
-                        frameBuffer.poll()
+                val elapsedTime = currentTime - videoStartTime // Time elapsed since video started
+                
+                // Calculate which frame should be displayed based on elapsed time
+                val targetTimestamp = elapsedTime
+                
+                // Get the closest frame to the target timestamp
+                val frame = frameBuffer.getClosestFrame(targetTimestamp)
+                
+                if (frame != null) {
+                    // Only update if this is a different frame than currently displayed
+                    if (frame.timestamp != currentFrameTimestamp) {
+                        frameCallback?.invoke(frame.imageBitmap, videoRotation)
+                        currentFrameTimestamp = frame.timestamp
                     }
-
-                    if (frame != null) {
-                        frameCallback?.invoke(frame, videoRotation)
-                        lastFrameTime = currentTime
+                } else {
+                    // Check if we've reached end of video
+                    if (isEndOfVideo && frameBuffer.isEmpty) {
+                        // No more frames and end of video reached, stop playing
+                        shouldPlay = false
+                        break
                     } else {
-                        // Buffer empty, skip frame to maintain timing
+                        // No frame available for current time, increment dropped frames
                         droppedFrames++
-                        lastFrameTime = currentTime
                     }
                 }
 
-                // Adaptive delay to maintain frame rate
-                val nextFrameDelay = maxOf(1L, frameDelay - (System.currentTimeMillis() - currentTime))
-                delay(nextFrameDelay)
+                // Small delay to prevent excessive CPU usage
+                delay(16) // ~60 FPS check rate
             }
         }
     }
@@ -204,8 +168,49 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
         playbackJob?.cancel()
         playbackJob = null
         
-        // Pause pipeline jobs but don't cancel them completely
-        // They will continue buffering frames in the background
+        // Calculate the current video position when pausing
+        if (videoStartTime > 0) {
+            val pausedAt = System.currentTimeMillis() - videoStartTime
+            currentFrameTimestamp = pausedAt
+        }
+    }
+    
+    /**
+     * Seek to a specific timestamp in milliseconds
+     * This will attempt to find and display the closest frame to the given timestamp
+     */
+    suspend fun seekTo(timestampMs: Long) {
+        if (!isInitialized) return
+        
+        // Update current frame timestamp
+        currentFrameTimestamp = timestampMs
+        
+        // If playing, adjust video start time to maintain sync
+        if (shouldPlay) {
+            videoStartTime = System.currentTimeMillis() - timestampMs
+        }
+        
+        // Try to get the closest frame from buffer
+        val frame = frameBuffer.getClosestFrame(timestampMs)
+        if (frame != null) {
+            withContext(Dispatchers.Main) {
+                frameCallback?.invoke(frame.imageBitmap, videoRotation)
+            }
+        } else {
+            // Frame not in buffer, seek in the grabber
+            try {
+                grabber?.timestamp = timestampMs * 1000L // Convert to microseconds
+            } catch (e: Exception) {
+                // Handle seek errors gracefully
+            }
+        }
+    }
+    
+    /**
+     * Get the time range of currently buffered frames
+     */
+    fun getBufferedTimeRange(): Pair<Long, Long> {
+        return Pair(frameBuffer.startTimeOfAvailableFrames, frameBuffer.endTimeOfAvailableFrames)
     }
 
     actual fun stop() {
@@ -213,12 +218,8 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
         playbackJob?.cancel()
         decodingJob?.cancel()
         
-        // Cancel all pipeline jobs
-        frameGrabJob?.cancel()
-        imageBitmapJob?.cancel()
-        
-        // Close channels
-        bufferedImageChannel?.close()
+        // Cancel all flow-based jobs
+        prefetchJob?.cancel()
 
         try {
             grabber?.stop()
@@ -227,12 +228,12 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
             // Ignore cleanup errors
         }
 
-        frameBuffer.clear()
+        runBlocking { frameBuffer.clear() }
         
-        // Reset pipeline components
-        bufferedImageChannel = null
-        frameGrabJob = null
-        imageBitmapJob = null
+        // Reset state
+        prefetchJob = null
+        frameFlow = null
+        isEndOfVideo = false
     }
 
     /**
