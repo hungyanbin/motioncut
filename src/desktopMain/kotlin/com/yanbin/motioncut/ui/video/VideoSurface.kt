@@ -12,6 +12,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
+import java.awt.Graphics2D
+import java.awt.RenderingHints
+import java.awt.geom.AffineTransform
+import java.awt.image.BufferedImage
 import java.util.concurrent.ConcurrentLinkedQueue
 
 /**
@@ -27,7 +31,7 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
     private var converter: Java2DFrameConverter? = null
     private var playbackJob: Job? = null
     private var decodingJob: Job? = null
-    private var frameCallback: ((ImageBitmap?) -> Unit)? = null
+    private var frameCallback: ((ImageBitmap, Int) -> Unit)? = null
 
     // Frame buffering for smooth playback
     private val frameBuffer = ConcurrentLinkedQueue<ImageBitmap>()
@@ -40,11 +44,14 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
     private var isInitialized = false
     private var shouldPlay = false
 
+    // Video rotation handling
+    private var videoRotation: Int = 0 // Rotation angle in degrees
+
     // Performance monitoring
     private var lastFrameTime = 0L
     private var droppedFrames = 0
 
-    actual suspend fun initialize(onFrameUpdate: (ImageBitmap?) -> Unit) {
+    actual suspend fun initialize(onFrameUpdate: (ImageBitmap, Int) -> Unit) {
         frameCallback = onFrameUpdate
 
         withContext(Dispatchers.IO) {
@@ -61,6 +68,9 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
                 frameRate = grabber?.frameRate?.takeIf { it > 0 } ?: 30.0
                 frameDelay = (1000 / frameRate).toLong()
 
+                // Detect video rotation from metadata
+                videoRotation = detectVideoRotation(grabber)
+
                 // Load first frame as thumbnail - try multiple frames if needed
                 var firstFrame = grabber?.grab()
                 var attempts = 0
@@ -73,8 +83,10 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
                     val bufferedImage = converter?.convert(firstFrame)
                     val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
 
-                    withContext(Dispatchers.Main) {
-                        frameCallback?.invoke(imageBitmap)
+                    if (imageBitmap != null) {
+                        withContext(Dispatchers.Main) {
+                            frameCallback?.invoke(imageBitmap, videoRotation)
+                        }
                     }
                 }
 
@@ -86,9 +98,6 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
                 startFrameDecoding()
 
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    frameCallback?.invoke(null)
-                }
                 throw e
             }
         }
@@ -108,6 +117,7 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
                             // Check if frame has image data
                             if (frame.image != null) {
                                 val bufferedImage = converter?.convert(frame)
+//                                val rotatedImage = bufferedImage?.let { applyRotation(it, videoRotation) }
                                 val imageBitmap = bufferedImage?.toOptimizedImageBitmap()
 
                                 if (imageBitmap != null) {
@@ -153,7 +163,7 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
                     }
 
                     if (frame != null) {
-                        frameCallback?.invoke(frame)
+                        frameCallback?.invoke(frame, videoRotation)
                         lastFrameTime = currentTime
                     } else {
                         // Buffer empty, skip frame to maintain timing
@@ -188,5 +198,71 @@ actual class VideoSurface actual constructor(private val videoPath: String) {
         }
 
         frameBuffer.clear()
+    }
+
+    /**
+     * Detect video rotation from metadata using FFmpegFrameGrabber's built-in method
+     */
+    private fun detectVideoRotation(grabber: FFmpegFrameGrabber?): Int {
+        return try {
+            // Use FFmpegFrameGrabber's built-in getDisplayRotation method
+            val rotation = grabber?.displayRotation ?: 0.0
+            
+            // Convert double to int and normalize to standard rotation values
+            val rotationInt = rotation.toInt()
+            -rotationInt
+        } catch (e: Exception) {
+            0 // Default to no rotation on error
+        }
+    }
+
+    /**
+     * Apply rotation to BufferedImage
+     */
+    private fun applyRotation(image: BufferedImage, rotation: Int): BufferedImage {
+        if (rotation == 0) return image
+
+        val radians = Math.toRadians(rotation.toDouble())
+        val sin = Math.abs(Math.sin(radians))
+        val cos = Math.abs(Math.cos(radians))
+
+        val originalWidth = image.width
+        val originalHeight = image.height
+
+        // Calculate new dimensions after rotation
+        val newWidth = (originalWidth * cos + originalHeight * sin).toInt()
+        val newHeight = (originalWidth * sin + originalHeight * cos).toInt()
+
+        // Create new image with rotated dimensions
+        val rotatedImage = BufferedImage(newWidth, newHeight, image.type)
+        val g2d: Graphics2D = rotatedImage.createGraphics()
+
+        try {
+            // Set rendering hints for better quality
+            g2d.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+            g2d.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY)
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+            // Create transformation
+            val transform = AffineTransform()
+            
+            // Translate to center of new image
+            transform.translate(newWidth / 2.0, newHeight / 2.0)
+            
+            // Apply rotation
+            transform.rotate(radians)
+            
+            // Translate back by half of original image size
+            transform.translate(-originalWidth / 2.0, -originalHeight / 2.0)
+
+            // Apply transformation and draw image
+            g2d.transform = transform
+            g2d.drawImage(image, 0, 0, null)
+
+        } finally {
+            g2d.dispose()
+        }
+
+        return rotatedImage
     }
 }

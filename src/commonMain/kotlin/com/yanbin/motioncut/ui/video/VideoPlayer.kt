@@ -4,6 +4,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
@@ -30,7 +32,10 @@ import androidx.compose.ui.unit.sp
 import com.yanbin.motioncut.domain.VideoFile
 import com.yanbin.motioncut.ui.widget.Pause
 import java.io.File
+import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * Video player component with optimized frame-by-frame playback
@@ -118,6 +123,7 @@ fun VideoDisplayArea(
     modifier: Modifier = Modifier
 ) {
     var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
+    var currentOrientation by remember { mutableIntStateOf(0)}
     var videoPlayer by remember { mutableStateOf<VideoSurface?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -136,8 +142,9 @@ fun VideoDisplayArea(
             }
 
             val player = VideoSurface(videoFile.path)
-            player.initialize { frame ->
+            player.initialize { frame, videoOrientation ->
                 currentFrame = frame
+                currentOrientation = videoOrientation
             }
 
             videoPlayer = player
@@ -184,7 +191,7 @@ fun VideoDisplayArea(
                     modifier = Modifier
                         .fillMaxSize()
                 ) {
-                    drawOptimizedVideoFrame(currentFrame!!)
+                    drawOptimizedVideoFrame(currentFrame, currentOrientation)
                 }
             }
             else -> {
@@ -195,11 +202,72 @@ fun VideoDisplayArea(
 }
 
 /**
- * Optimized video frame drawing with aspect ratio preservation and fit-to-view scaling
+ * Optimized video frame drawing with aspect ratio preservation, fit-to-view scaling, and rotation support
  */
-fun DrawScope.drawOptimizedVideoFrame(frame: ImageBitmap) {
+fun DrawScope.drawOptimizedVideoFrame(bitmap: ImageBitmap?, orientation: Int) {
+    val frame = bitmap ?: return
     val canvasWidth = size.width
     val canvasHeight = size.height
+    
+    // If no rotation needed, use simple drawing
+    if (orientation == 0) {
+        drawSimpleFrame(frame, canvasWidth, canvasHeight)
+        return
+    }
+    
+    // Apply rotation transformation similar to desktop implementation
+    val radians = Math.toRadians(orientation.toDouble())
+    val sinAbs = abs(sin(radians))
+    val cosAbs = abs(cos(radians))
+    
+    val originalWidth = frame.width.toFloat()
+    val originalHeight = frame.height.toFloat()
+    
+    // Calculate rotated dimensions
+    val rotatedWidth = (originalWidth * cosAbs + originalHeight * sinAbs).toFloat()
+    val rotatedHeight = (originalWidth * sinAbs + originalHeight * cosAbs).toFloat()
+    
+    // Calculate aspect ratios using rotated dimensions
+    val canvasAspectRatio = canvasWidth / canvasHeight
+    val rotatedAspectRatio = rotatedWidth / rotatedHeight
+    
+    // Calculate scaling to fit the entire view while maintaining aspect ratio
+    val scale = if (rotatedAspectRatio > canvasAspectRatio) {
+        // Rotated frame is wider than canvas - fit to width
+        canvasWidth / rotatedWidth
+    } else {
+        // Rotated frame is taller than canvas - fit to height
+        canvasHeight / rotatedHeight
+    }
+    
+    val scaledWidth = originalWidth * scale
+    val scaledHeight = originalHeight * scale
+    
+    // Center the rotation around the canvas center
+    val centerX = canvasWidth / 2
+    val centerY = canvasHeight / 2
+    
+    // Apply rotation and draw the image
+    rotate(
+        degrees = orientation.toFloat(),
+        pivot = androidx.compose.ui.geometry.Offset(centerX, centerY)
+    ) {
+        // Center the original (unrotated) frame
+        val offsetX = centerX - scaledWidth / 2
+        val offsetY = centerY - scaledHeight / 2
+        
+        drawImage(
+            image = frame,
+            dstOffset = IntOffset(offsetX.toInt(), offsetY.toInt()),
+            dstSize = IntSize(scaledWidth.toInt(), scaledHeight.toInt())
+        )
+    }
+}
+
+/**
+ * Helper function for drawing frames without rotation
+ */
+private fun DrawScope.drawSimpleFrame(frame: ImageBitmap, canvasWidth: Float, canvasHeight: Float) {
     val frameWidth = frame.width.toFloat()
     val frameHeight = frame.height.toFloat()
 
