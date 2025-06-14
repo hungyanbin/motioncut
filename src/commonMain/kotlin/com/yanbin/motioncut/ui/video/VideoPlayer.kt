@@ -52,7 +52,6 @@ fun VideoPlayer(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .aspectRatio(16f / 9f) // Standard video aspect ratio
                 .background(Color.Black)
         ) {
             // Optimized video display area with frame buffering
@@ -168,7 +167,9 @@ fun VideoDisplayArea(
     }
 
     Box(
-        modifier = modifier.background(Color.Black),
+        modifier = modifier
+            .fillMaxSize()
+            .background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
         when {
@@ -179,7 +180,10 @@ fun VideoDisplayArea(
                 ErrorDisplay(errorMessage!!)
             }
             currentFrame != null -> {
-                Canvas(modifier = Modifier.fillMaxSize()) {
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                ) {
                     drawOptimizedVideoFrame(currentFrame!!)
                 }
             }
@@ -191,7 +195,7 @@ fun VideoDisplayArea(
 }
 
 /**
- * Optimized video frame drawing with aspect ratio preservation and scaling
+ * Optimized video frame drawing with aspect ratio preservation and fit-to-view scaling
  */
 fun DrawScope.drawOptimizedVideoFrame(frame: ImageBitmap) {
     val canvasWidth = size.width
@@ -199,15 +203,23 @@ fun DrawScope.drawOptimizedVideoFrame(frame: ImageBitmap) {
     val frameWidth = frame.width.toFloat()
     val frameHeight = frame.height.toFloat()
 
-    // Calculate scaling to fit while maintaining aspect ratio
-    val scaleX = canvasWidth / frameWidth
-    val scaleY = canvasHeight / frameHeight
-    val scale = min(scaleX, scaleY)
+    // Calculate aspect ratios
+    val canvasAspectRatio = canvasWidth / canvasHeight
+    val frameAspectRatio = frameWidth / frameHeight
+
+    // Calculate scaling to fit the entire view while maintaining aspect ratio
+    val scale = if (frameAspectRatio > canvasAspectRatio) {
+        // Frame is wider than canvas - fit to width
+        canvasWidth / frameWidth
+    } else {
+        // Frame is taller than canvas - fit to height
+        canvasHeight / frameHeight
+    }
 
     val scaledWidth = frameWidth * scale
     val scaledHeight = frameHeight * scale
 
-    // Center the frame
+    // Center the frame in the available space
     val offsetX = (canvasWidth - scaledWidth) / 2
     val offsetY = (canvasHeight - scaledHeight) / 2
 
