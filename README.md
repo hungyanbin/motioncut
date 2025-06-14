@@ -1,10 +1,12 @@
 # MotionCut
 
-An intelligent video trimming application built with Kotlin Multiplatform (KMP) that uses machine learning to automatically detect and track people in videos, enabling smart video editing across macOS and Windows platforms.
+A video trimming application built with Kotlin Multiplatform (KMP) for desktop platforms. Currently in early development with basic video playback functionality.
 
 ## 🎯 Project Overview
 
-This application leverages ML-based person detection and motion tracking to automatically trim videos, keeping only segments with active human movement. The app is designed to work efficiently on both macOS (for development and quick previews) and Windows (for GPU-accelerated production processing).
+MotionCut is a desktop video editing application focused on intelligent video trimming. The project follows an incremental development approach, starting with basic video playback and gradually adding advanced features like AI-powered motion detection.
+
+**Current Status**: Basic video player with file handling - Phase 1 of development
 
 ## 🏗️ Architecture
 
@@ -12,211 +14,100 @@ This application leverages ML-based person detection and motion tracking to auto
 graph TD
     A[KMP Shared Module] --> B[Desktop Application]
     
-    subgraph "Shared Code 80%"
-        D[Video Processing Logic]
-        E[Motion Analysis Algorithms]
-        F[UI Components - Compose]
+    subgraph "Shared Code (commonMain)"
+        D[UI Components - Compose]
+        E[Domain Models]
+        F[Service Interfaces]
         G[File Management]
-        H[Export Logic]
     end
     
-    subgraph "Platform-Specific 20%"
-        I[Desktop - Cross-platform Optimized]
-        K[Person Identification]
-        L[Cross-Video Tracking]
+    subgraph "Platform-Specific (desktopMain)"
+        H[Platform Implementations]
+        I[Native File Handling]
+        J[OS-Specific Services]
     end
     
     A --> D
     A --> E
     A --> F
     A --> G
-    A --> H
     
+    B --> H
     B --> I
-    B --> K
-    B --> L
+    B --> J
 ```
 
-## 🚀 Key Features
+## 🚀 Current Features
 
-### Core Functionality
-- **Drag & Drop Video Import**: Easy video file handling
-- **Real-time Video Playback**: Preview videos with timeline scrubbing
-- **AI-Powered Person Detection**: Automatic person tracking using ML models
-- **Motion-Based Trimming**: Keep only segments with active movement
-- **Cross-Platform Support**: Desktop application with unified codebase
-- **GPU Acceleration**: Platform-specific optimization support
+### ✅ Implemented
+- **Project Structure**: KMP setup with proper commonMain/desktopMain organization
+- **Basic UI**: Compose Desktop application with main screen
+- **File Handling**: Drag & drop interface for video files
+- **Domain Models**: Basic video file representation
+- **Platform Detection**: OS information and platform-specific providers
 
-### Advanced Features
-- **Person Identification**: Track specific individuals across multiple videos
-- **Batch Processing**: Process multiple videos simultaneously
-- **Custom Thresholds**: Adjustable motion sensitivity
-- **Export Options**: Multiple formats and quality settings
-- **Timeline Editor**: Manual trim adjustments
+### 🚧 In Development
+- **Video Playback**: Frame-by-frame video rendering (current focus)
+- **Timeline Controls**: Basic playback controls and scrubbing
+- **Video Processing**: Core trimming functionality
+
+### 📋 Planned Features
+- **Motion Detection**: AI-powered person tracking (Phase 3)
+- **Smart Trimming**: Automatic segment identification
+- **Batch Processing**: Multiple video handling
+- **Export Options**: Various formats and quality settings
 
 ## 🛠️ Technology Stack
 
 ### Core Technologies
 - **Kotlin Multiplatform (KMP)**: Cross-platform development
 - **Compose Desktop**: Modern, declarative UI framework
-- **ONNX Runtime**: ML model inference with GPU acceleration
-- **JavaCV (OpenCV)**: Video processing and computer vision
-- **FFmpeg**: Video encoding/decoding
+- **JavaCV/FFmpeg**: Video processing (planned integration)
 
-### ML & Computer Vision
-- **Person Detection**: YOLO, MediaPipe, or custom models
-- **Pose Estimation**: Track body keypoints for motion analysis
-- **Face Recognition**: For person identification across videos
-- **Motion Analysis**: Optical flow and temporal tracking
+### Future ML Integration (Phase 3)
+- **ONNX Runtime**: ML model inference
+- **Person Detection**: YOLO or MediaPipe models
+- **Motion Analysis**: Optical flow algorithms
 
-### Platform-Specific Optimizations
-- **Desktop**: Unified desktop implementation with platform detection
+## 📋 Development Phases
 
-## 📋 Development Milestones
-
-### Milestone 1: Foundation & Basic Video Handling
-**Timeline: 2-3 weeks**
+### Phase 1: Basic Video Player ✅ (Current)
+**Timeline**: 4-6 weeks (including learning curve)
 
 **Objectives:**
-- Set up KMP project structure for desktop platforms
-- Implement drag & drop video interface
-- Add video playback functionality with timeline controls
-- Basic file management and export capabilities
+- ✅ Set up KMP project structure
+- ✅ Implement basic UI with Compose Desktop
+- ✅ Add drag & drop file handling
+- 🚧 Create video playback functionality
+- 🚧 Add timeline controls
 
-**Deliverables:**
-- [x] KMP project setup with Compose Desktop
-- [ ] Cross-platform video player component
-- [x] Drag & drop file handling
-- [ ] Timeline scrubbing and playback controls
-- [ ] Basic video export functionality
-
-**Technical Tasks:**
+**Current Implementation:**
 ```kotlin
-// Core components to implement
-- VideoPlayer composable
-- TimelineController
-- FileDropHandler
-- VideoExporter
-- Platform-specific video codecs
+// Implemented components
+✅ VideoFile.kt - Domain model
+✅ MainScreen.kt - Main UI
+✅ DragAndDropHandler.kt - File handling
+✅ OSInfo.kt - Platform detection
+🚧 VideoPlayer.kt - Video playback (in progress)
 ```
 
-### Milestone 2: ML Model Integration & Cross-Platform Inference
-**Timeline: 3-4 weeks**
+### Phase 2: Basic Trimming (Next)
+**Timeline**: 4-5 weeks (realistic estimate based on Phase 1 experience)
 
 **Objectives:**
-- Integrate person detection models
-- Implement motion tracking algorithms
-- Verify model performance on both platforms
-- Optimize for platform-specific acceleration
+- Implement video trimming functionality
+- Add export capabilities
+- Create timeline editing interface
+- Basic video processing pipeline
 
-**Deliverables:**
-- [ ] ONNX Runtime integration
-- [ ] Person detection model (YOLO/MediaPipe)
-- [ ] Motion analysis algorithms
-- [ ] Platform-specific GPU acceleration
-- [ ] Performance benchmarking tools
-
-**Technical Implementation:**
-```kotlin
-// ML Pipeline Architecture
-expect class PersonTracker {
-    fun detectPerson(frame: VideoFrame): BoundingBox?
-    fun trackMotion(frames: List<VideoFrame>): MotionData
-}
-
-// Platform-specific implementations
-actual class PersonTracker {
-    // Desktop: Cross-platform optimized with runtime detection
-}
-```
-
-**Model Testing Strategy:**
-- Test different model architectures (YOLO v8, MediaPipe, custom models)
-- Benchmark inference speed on both platforms
-- Validate accuracy across different video types
-- Optimize memory usage and batch processing
-
-### Milestone 3: Intelligent Video Trimming & Export
-**Timeline: 3-4 weeks**
+### Phase 3: AI Integration (Future)
+**Timeline**: 8-12 weeks (complex cross-platform ML integration)
 
 **Objectives:**
-- Build complete trimming workflow
-- Implement motion-based segment selection
-- Create intuitive UI for trim preview and adjustment
+- Integrate ML models for person detection
+- Implement motion-based trimming
 - Add batch processing capabilities
-
-**Deliverables:**
-- [ ] Motion analysis and threshold detection
-- [ ] Automatic segment identification
-- [ ] Trim preview with timeline visualization
-- [ ] Batch video processing
-- [ ] Multiple export formats and quality options
-
-**UI Flow:**
-```mermaid
-graph LR
-    A[Video Import] --> B[AI Analysis]
-    B --> C[Motion Detection]
-    C --> D[Segment Identification]
-    D --> E[Preview & Adjust]
-    E --> F[Export Trimmed Video]
-    
-    subgraph "User Controls"
-        G[Sensitivity Slider]
-        H[Manual Trim Points]
-        I[Preview Timeline]
-    end
-    
-    E --> G
-    E --> H
-    E --> I
-```
-
-**Core Features:**
-- Real-time motion visualization on timeline
-- Adjustable motion sensitivity thresholds
-- Manual override for trim points
-- Progress tracking for batch operations
-- Quality presets for different use cases
-
-### Milestone 4: Person Identification & Cross-Video Tracking
-**Timeline: 4-5 weeks**
-
-**Objectives:**
-- Implement face recognition for person identification
-- Enable tracking the same person across multiple videos
-- Build person management interface
-- Add advanced filtering and search capabilities
-
-**Deliverables:**
-- [ ] Face recognition model integration
-- [ ] Person database and management
-- [ ] Cross-video person tracking
-- [ ] Advanced filtering UI
-- [ ] Person-specific trim profiles
-
-**Advanced Features:**
-```kotlin
-// Person identification system
-class PersonIdentifier {
-    fun identifyPerson(face: FaceEmbedding): PersonID?
-    fun registerNewPerson(faces: List<FaceEmbedding>): PersonID
-    fun trackPersonAcrossVideos(personID: PersonID, videos: List<Video>): List<PersonSegment>
-}
-
-// Cross-video workflow
-class CrossVideoProcessor {
-    fun findPersonInVideos(personID: PersonID): Map<Video, List<TimeSegment>>
-    fun createPersonHighlightReel(personID: PersonID): Video
-    fun batchProcessPersonVideos(personID: PersonID, settings: TrimSettings)
-}
-```
-
-**UI Enhancements:**
-- Person gallery with thumbnail previews
-- Search and filter by person
-- Bulk operations for person-specific content
-- Timeline view showing person appearances across videos
+- Performance optimization
 
 ## 🔧 Development Setup
 
@@ -225,31 +116,18 @@ class CrossVideoProcessor {
 - **Kotlin 2.1.21**: Latest Kotlin version
 - **Gradle 8.11+**: Build system
 
-### Platform-Specific Requirements
+### Platform-Specific Build Requirements
 
-#### macOS Development
-```bash
-# Install Xcode Command Line Tools
-xcode-select --install
+⚠️ **Important**: Cross-compilation limitations
+- Windows executables (.msi) can only be built on Windows
+- macOS executables (.dmg) can only be built on macOS  
+- Linux executables (.deb) can only be built on Linux
 
-# Install Homebrew (if not already installed)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Install required dependencies
-brew install ffmpeg
-```
-
-#### Windows Production
-```bash
-# Install NVIDIA CUDA Toolkit
-# Download from: https://developer.nvidia.com/cuda-downloads
-
-# Install cuDNN
-# Download from: https://developer.nvidia.com/cudnn
-
-# Install Visual Studio Build Tools
-# Download from: https://visualstudio.microsoft.com/downloads/
-```
+### Building for Windows from macOS
+This is **not possible**. You must use:
+- Windows machine or VM
+- GitHub Actions with Windows runners
+- Cloud build services
 
 ### Project Setup
 ```bash
@@ -261,135 +139,123 @@ cd motioncut
 ./gradlew build
 
 # Run on desktop
-./gradlew :desktop:run
+./gradlew run
 ```
 
-## 📁 Project Structure
+## 📁 Current Project Structure
 
 ```
 motioncut/
 ├── src/
 │   ├── commonMain/kotlin/com/yanbin/motioncut/
 │   │   ├── domain/
-│   │   │   ├── VideoFile.kt               # Video file domain model ✅
-│   │   │   ├── VideoProcessor.kt          # Core video processing
-│   │   │   ├── PersonTracker.kt           # ML tracking interface
-│   │   │   ├── MotionAnalyzer.kt          # Motion detection algorithms
-│   │   │   └── PersonIdentifier.kt        # Face recognition
+│   │   │   └── VideoFile.kt               # Video file domain model ✅
 │   │   ├── platform/
-│   │   │   └── DragAndDropHandler.kt      # Cross-platform drag & drop interface ✅
+│   │   │   ├── DragAndDropHandler.kt      # Cross-platform interface ✅
+│   │   │   └── OSInfo.kt                  # Platform information ✅
+│   │   ├── services/
+│   │   │   └── VideoTrimmerService.kt     # Service interface ✅
 │   │   └── ui/
 │   │       ├── MainScreen.kt              # Main application UI ✅
-│   │       ├── SystemInfoScreen.kt        # System information screen ✅
-│   │       └── components/
-│   │           ├── VideoPlayer.kt         # Video playback component
-│   │           ├── Timeline.kt            # Timeline and scrubbing
-│   │           ├── ControlPanel.kt        # Control panel component
-│   │           ├── FileDropZone.kt        # File drop zone component ✅
-│   │           ├── PersonGallery.kt       # Person management UI
-│   │           └── ExportDialog.kt        # Export configuration
-│   ├── jvmMain/kotlin/
-│   │   ├── Main.kt                        # Application entry point
-│   │   ├── platform/
-│   │   │   ├── PlatformDetector.kt        # OS and hardware detection
-│   │   │   └── GPUDetector.kt             # GPU capability detection
-│   │   └── ml/
-│   │       ├── ONNXTracker.kt             # ONNX Runtime implementation
-│   │       ├── CPUTracker.kt              # CPU-optimized inference
-│   │       └── ModelManager.kt            # Model loading and caching
+│   │       ├── SystemInfoScreen.kt        # System information ✅
+│   │       ├── VideoPlayerWithTrimming.kt # Video player wrapper ✅
+│   │       ├── components/
+│   │       │   ├── FileDropZone.kt        # File drop zone ✅
+│   │       │   └── VideoPlayer.kt         # Video playback 🚧
+│   │       ├── video/
+│   │       │   ├── VideoPlayer.kt         # Video components 🚧
+│   │       │   ├── VideoPlayerWithTrimming.kt
+│   │       │   └── VideoSurface.kt
+│   │       └── widget/
+│   │           └── Icon.kt                # UI widgets ✅
 │   └── desktopMain/kotlin/
-│       ├── Main.kt                        # Desktop application entry point ✅
-│       └── platform/
-│           ├── OSInfo.kt                  # Platform information ✅
-│           ├── PlatformProviders.kt       # Platform-specific providers ✅
-│           └── DragAndDropHandler.kt      # Desktop drag & drop implementation ✅
-├── models/                                # Pre-trained ML models
-│   ├── person_detection.onnx
-│   ├── pose_estimation.onnx
-│   └── face_recognition.onnx
-├── docs/                                  # Documentation
-│   ├── API.md
-│   ├── ARCHITECTURE.md
-│   └── DEPLOYMENT.md
-├── build.gradle.kts                       # Build configuration
-├── settings.gradle.kts                    # Project settings
-└── gradle/
-    └── libs.versions.toml                 # Dependency management
+│       ├── Main.kt                        # Desktop entry point ✅
+│       ├── platform/
+│       │   ├── DragAndDropHandler.kt      # Desktop implementation ✅
+│       │   ├── OSInfo.kt                  # Platform info ✅
+│       │   └── PlatformProviders.kt       # Platform providers ✅
+│       ├── services/
+│       │   └── VideoTrimmerService.kt     # Desktop service impl ✅
+│       └── ui/
+│           └── video/
+│               └── VideoSurface.kt        # Desktop video surface 🚧
+├── build.gradle.kts                       # Build configuration ✅
+├── settings.gradle.kts                    # Project settings ✅
+└── developNote/                           # Development documentation ✅
+    ├── note1.md                          # Development notes
+    └── retro for note1.md                # Retrospective analysis
 ```
 
-## ⚡ Performance Optimization
+**Legend**: ✅ Implemented | 🚧 In Progress | ❌ Not Started
 
-### Desktop Platform
-- **Processing Mode**: Adaptive based on hardware capabilities
-- **Resolution**: Up to 4K with quality scaling
-- **Acceleration**: Runtime detection and optimization
-- **Memory Usage**: 2-8GB RAM (varies by hardware)
-- **Use Case**: Cross-platform video processing and editing
+## 🎥 Video Rendering Implementation
 
-### Performance Expectations
-| Hardware Type | Video Resolution | Processing Speed | Memory Usage |
-|---------------|------------------|------------------|--------------|
-| Standard CPU  | 720p            | 15-30 FPS        | 2-4GB RAM    |
-| Standard CPU  | 1080p           | 8-15 FPS         | 3-6GB RAM    |
-| GPU Enabled   | 1080p           | 30-60 FPS        | 4-6GB RAM    |
-| GPU Enabled   | 4K              | 15-30 FPS        | 6-8GB RAM    |
+### Current Approach: Frame-by-Frame Rendering
+- **Method**: Extract individual frames and render as images
+- **Performance**: Suitable for analysis but not optimal for playback
+- **Rationale**: Enables frame-level analysis for future motion detection
+- **Limitations**: Higher memory usage, not suitable for real-time playback
 
-## 🧪 Testing Strategy
+### Alternative Approaches Considered
+- Native video players: Not suitable for editing applications
+- Java video libraries: Cross-platform compatibility issues
+- Hardware acceleration: Future enhancement
 
-### Unit Tests
-- Video processing algorithms
-- Motion detection accuracy
-- Person identification precision
-- Cross-platform compatibility
+## 🤖 Working with AI Assistants
 
-### Integration Tests
-- End-to-end video processing pipeline
-- ML model inference on both platforms
-- File I/O and export functionality
-- UI component interactions
+### Best Practices Learned
+1. **Start Simple**: Always insist on minimal implementations first
+2. **Verify Platform Claims**: Don't trust AI about platform-specific capabilities
+3. **Maintain Architecture Control**: Be explicit about code organization
+4. **Question Performance Suggestions**: Evaluate efficiency implications
+5. **Incremental Development**: Resist AI's tendency to over-engineer
 
-### Performance Tests
-- GPU utilization benchmarks
-- Memory usage profiling
-- Processing speed measurements
-- Batch operation efficiency
+### Common AI Assistant Pitfalls
+- Over-engineering simple requirements
+- Incorrect platform-specific assumptions
+- Poor understanding of KMP architecture boundaries
+- Overconfidence in unverified solutions
+
+## 📈 Realistic Development Timeline
+
+### Phase 1: Basic Video Player (Current)
+- **Original Estimate**: 2-3 weeks
+- **Actual Experience**: 4-6 weeks (including AI collaboration challenges)
+- **Challenges**: Cross-platform video rendering, build system setup
+
+### Phase 2: Basic Trimming
+- **Estimated**: 2-3 weeks  
+- **Realistic**: 4-5 weeks (based on Phase 1 experience)
+
+### Phase 3: ML Integration
+- **Original Estimate**: 3-4 weeks
+- **Realistic Estimate**: 8-12 weeks (complex cross-platform ML integration)
 
 ## 📦 Deployment
 
-### Distribution Strategy
-- **Single JAR**: Cross-platform executable with runtime platform detection
-- **Platform-Specific Optimizations**: Automatic GPU acceleration detection
-- **Model Bundling**: Include pre-trained models in distribution
-- **Auto-Updates**: Built-in update mechanism for models and application
+### Current Distribution
+- **Development**: Run via Gradle
+- **Platform Limitations**: Cannot cross-compile between platforms
 
-### System Requirements
-
-#### Minimum Requirements
-- **OS**: Windows 10+, macOS 10.15+, or Linux (Ubuntu 18.04+)
-- **RAM**: 8GB
-- **Storage**: 2GB free space
-- **CPU**: Intel i5 or AMD Ryzen 5 equivalent
-
-#### Recommended Requirements
-- **OS**: Windows 11+, macOS 12+, or Linux (Ubuntu 20.04+)
-- **RAM**: 16GB+
-- **Storage**: 10GB free space
-- **GPU**: Dedicated GPU recommended (NVIDIA, AMD, or integrated)
-- **CPU**: Intel i7 or AMD Ryzen 7 equivalent
+### Future Distribution Plans
+- Platform-specific installers
+- Bundled ML models (when implemented)
+- Auto-update mechanism
 
 ## 🤝 Contributing
 
 ### Development Workflow
 1. Fork the repository
 2. Create a feature branch
-3. Implement changes with tests
-4. Submit pull request with detailed description
+3. Implement changes incrementally
+4. Test on target platform
+5. Submit pull request with detailed description
 
-### Code Style
-- Follow Kotlin coding conventions
-- Use meaningful variable and function names
-- Add comprehensive documentation for public APIs
-- Include unit tests for new functionality
+### Code Organization Guidelines
+- **commonMain**: UI components, business logic, interfaces
+- **desktopMain**: Platform implementations, native integrations
+- Follow established patterns in existing code
+- Document architectural decisions
 
 ## 📄 License
 
@@ -400,19 +266,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Documentation
 - [Kotlin Multiplatform Guide](https://kotlinlang.org/docs/multiplatform.html)
 - [Compose Desktop Documentation](https://github.com/JetBrains/compose-multiplatform)
-- [ONNX Runtime Documentation](https://onnxruntime.ai/docs/)
-- [JavaCV Documentation](https://github.com/bytedeco/javacv)
 
-### ML Models
-- [YOLO Models](https://github.com/ultralytics/ultralytics)
-- [MediaPipe Solutions](https://developers.google.com/mediapipe)
-- [ONNX Model Zoo](https://github.com/onnx/models)
-
-### Performance Optimization
-- [NVIDIA TensorRT](https://developer.nvidia.com/tensorrt)
-- [Apple Metal Performance Shaders](https://developer.apple.com/metal/)
-- [CUDA Programming Guide](https://docs.nvidia.com/cuda/)
+### Development Notes
+- [`developNote/note1.md`](developNote/note1.md) - Initial development experience
+- [`developNote/retro for note1.md`](developNote/retro%20for%20note1.md) - Project analysis and lessons learned
 
 ---
 
 **Built with ❤️ using Kotlin Multiplatform**
+
+*This README reflects the actual current state of the project and is updated incrementally as features are implemented.*
