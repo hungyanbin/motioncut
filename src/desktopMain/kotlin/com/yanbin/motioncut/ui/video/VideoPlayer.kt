@@ -1,11 +1,14 @@
 package com.yanbin.motioncut.ui.video
 
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.graphics.asComposeImageBitmap
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
+import org.jetbrains.skia.Bitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ImageInfo
 import java.awt.image.BufferedImage
 
 actual class VideoPlayer actual constructor(private val videoPath: String) {
@@ -13,7 +16,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
     private var converter: Java2DFrameConverter? = null
     private var playbackJob: Job? = null
     private var decodingJob: Job? = null
-    private var frameCallback: ((ImageBitmap, Int) -> Unit)? = null
+    private var frameCallback: ((ImageBitmap) -> Unit)? = null
 
     // Frame buffering for smooth playback with timestamp support
     private val frameBuffer = TimestampFrameBuffer(defaultCapacity = 200)
@@ -41,7 +44,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
     // Performance monitoring
     private var droppedFrames = 0
 
-    actual suspend fun initialize(onFrameUpdate: (ImageBitmap, Int) -> Unit) {
+    actual suspend fun initialize(onFrameUpdate: (ImageBitmap) -> Unit) {
         frameCallback = onFrameUpdate
 
         withContext(Dispatchers.IO) {
@@ -86,7 +89,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                     if (frame != null && frame.image != null) {
                         val bufferedImage = converter?.convert(frame)
                         if (bufferedImage != null) {
-                            val imageBitmap = bufferedImage.toOptimizedImageBitmap()
+                            val imageBitmap = bufferedImage.toOptimizedImageBitmap(videoRotation)
                             val timestamp = (grabber?.timestamp ?: 0L) / 1000L // Convert to milliseconds
                             val videoFrame = Frame(imageBitmap, timestamp)
                             emit(videoFrame)
@@ -142,7 +145,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                 if (frame != null) {
                     // Only update if this is a different frame than currently displayed
                     if (frame.timestamp != currentFrameTimestamp) {
-                        frameCallback?.invoke(frame.imageBitmap, videoRotation)
+                        frameCallback?.invoke(frame.imageBitmap)
                         currentFrameTimestamp = frame.timestamp
                     }
                 } else {
@@ -194,7 +197,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
         val frame = frameBuffer.getClosestFrame(timestampMs)
         if (frame != null) {
             withContext(Dispatchers.Main) {
-                frameCallback?.invoke(frame.imageBitmap, videoRotation)
+                frameCallback?.invoke(frame.imageBitmap)
             }
         } else {
             // Frame not in buffer, seek in the grabber
@@ -260,17 +263,71 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
  * 2. Efficient color space conversion
  * 3. Minimal memory allocation
  */
-internal fun BufferedImage.toOptimizedImageBitmap(): ImageBitmap {
+private fun BufferedImage.toOptimizedImageBitmap(rotation: Int): ImageBitmap {
     return when (type) {
         BufferedImage.TYPE_INT_RGB, BufferedImage.TYPE_INT_ARGB -> {
             // Fast path: Use built-in extension function which handles color mapping correctly
-            this.toComposeImageBitmap()
+            this.toComposeImageBitmap(rotation)
         }
         else -> {
             // Fallback: Convert to compatible format first, then use fast path
-            toCompatibleFormat().toComposeImageBitmap()
+            toCompatibleFormat().toComposeImageBitmap(rotation)
         }
     }
+}
+
+// The orientation could be 0, 90, 180, 270
+private fun BufferedImage.toComposeImageBitmap(rotation: Int): ImageBitmap {
+    // Normalize rotation to 0, 90, 180, 270
+    val normalizedRotation = ((rotation % 360) + 360) % 360
+    
+    // Determine final dimensions after rotation
+    val (finalWidth, finalHeight) = when (normalizedRotation) {
+        90, 270 -> height to width  // Swap dimensions for 90° and 270° rotations
+        else -> width to height     // Keep original dimensions for 0° and 180°
+    }
+    
+    val bytesPerPixel = 4
+    val pixels = ByteArray(finalWidth * finalHeight * bytesPerPixel)
+
+    var k = 0
+    for (y in 0 until finalHeight) {
+        for (x in 0 until finalWidth) {
+            // Calculate source coordinates based on rotation
+            // For each destination pixel (x,y), find where it should come from in the source
+            val (srcX, srcY) = when (normalizedRotation) {
+                0 -> x to y                                    // No rotation
+                90 -> y to (height - 1 - x)                   // 90° clockwise: dest(x,y) <- src(y, height-1-x)
+                180 -> (width - 1 - x) to (height - 1 - y)    // 180°: dest(x,y) <- src(width-1-x, height-1-y)
+                270 -> (width - 1 - y) to x                   // 270° clockwise: dest(x,y) <- src(width-1-y, x)
+                else -> x to y                                 // Fallback to no rotation
+            }
+            
+            // Ensure source coordinates are within bounds
+            if (srcX >= 0 && srcX < width && srcY >= 0 && srcY < height) {
+                val argb = getRGB(srcX, srcY)
+                val a = (argb shr 24) and 0xff
+                val r = (argb shr 16) and 0xff
+                val g = (argb shr 8) and 0xff
+                val b = (argb shr 0) and 0xff
+                pixels[k++] = b.toByte()
+                pixels[k++] = g.toByte()
+                pixels[k++] = r.toByte()
+                pixels[k++] = a.toByte()
+            } else {
+                // Fill with transparent pixels if out of bounds
+                pixels[k++] = 0
+                pixels[k++] = 0
+                pixels[k++] = 0
+                pixels[k++] = 0
+            }
+        }
+    }
+
+    val bitmap = Bitmap()
+    bitmap.allocPixels(ImageInfo.makeS32(finalWidth, finalHeight, ColorAlphaType.UNPREMUL))
+    bitmap.installPixels(pixels)
+    return bitmap.asComposeImageBitmap()
 }
 
 /**
