@@ -8,7 +8,7 @@ import org.bytedeco.javacv.FFmpegFrameGrabber
 import org.bytedeco.javacv.Java2DFrameConverter
 import java.awt.image.BufferedImage
 
-actual class VideoSurface actual constructor(private val videoPath: String) {
+actual class VideoPlayer actual constructor(private val videoPath: String) {
     private var grabber: FFmpegFrameGrabber? = null
     private var converter: Java2DFrameConverter? = null
     private var playbackJob: Job? = null

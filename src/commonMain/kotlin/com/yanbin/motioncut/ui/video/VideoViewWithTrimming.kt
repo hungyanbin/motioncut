@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
  * Contains all the UI logic that can be shared across platforms
  */
 @Composable
-fun VideoPlayerWithTrimmingContent(
+fun VideoViewWithTrimmingContent(
     videoFile: VideoFile,
     trimmerService: VideoTrimmerService,
     modifier: Modifier = Modifier
@@ -35,7 +35,7 @@ fun VideoPlayerWithTrimmingContent(
     Column(modifier = modifier) {
         // Video Player
         Box(modifier = Modifier.fillMaxWidth()) {
-            VideoPlayer(
+            VideoView(
                 videoFile = videoFile,
                 modifier = Modifier.fillMaxWidth(),
                 onPlayPause = { isPlaying ->
@@ -212,7 +212,7 @@ fun VideoPlayerWithTrimming(
 ) {
     val trimmerService = remember { createVideoTrimmerService() }
 
-    VideoPlayerWithTrimmingContent(
+    VideoViewWithTrimmingContent(
         videoFile = videoFile,
         trimmerService = trimmerService,
         modifier = modifier
