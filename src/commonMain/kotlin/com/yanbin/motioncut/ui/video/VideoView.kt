@@ -11,6 +11,8 @@ import androidx.compose.material.Card
 import androidx.compose.material.CircularProgressIndicator
 import androidx.compose.material.Icon
 import androidx.compose.material.MaterialTheme
+import androidx.compose.material.Slider
+import androidx.compose.material.SliderDefaults
 import androidx.compose.material.Text
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PlayArrow
@@ -39,6 +41,7 @@ fun VideoView(
     isPlaying: Boolean = false
 ) {
     var currentIsPlaying by remember { mutableStateOf(isPlaying) }
+    var progress by remember { mutableStateOf(0f) }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -65,6 +68,18 @@ fun VideoView(
                     onPlayPause(currentIsPlaying)
                 },
                 modifier = Modifier.align(Alignment.Center)
+            )
+
+            // Progress bar at the bottom
+            VideoProgressBar(
+                progress = progress,
+                onProgressChange = { newProgress ->
+                    progress = newProgress
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             )
         }
     }
@@ -105,6 +120,27 @@ private fun PlayButton(
             tint = MaterialTheme.colors.primary.copy(alpha = alphaValue)
         )
     }
+}
+
+/**
+ * Video progress slider using Material Slider component
+ */
+@Composable
+private fun VideoProgressBar(
+    progress: Float,
+    onProgressChange: (Float) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Slider(
+        value = progress,
+        onValueChange = onProgressChange,
+        modifier = modifier,
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colors.primary,
+            activeTrackColor = MaterialTheme.colors.primary,
+            inactiveTrackColor = Color.White.copy(alpha = 0.3f)
+        )
+    )
 }
 
 /**
