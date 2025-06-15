@@ -10,6 +10,7 @@ import org.jetbrains.skia.Bitmap
 import org.jetbrains.skia.ColorAlphaType
 import org.jetbrains.skia.ImageInfo
 import java.awt.image.BufferedImage
+import org.bytedeco.ffmpeg.global.avutil
 
 actual class VideoPlayer actual constructor(private val videoPath: String) {
     private var grabber: FFmpegFrameGrabber? = null
@@ -43,23 +44,29 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
 
     // Performance monitoring
     private var droppedFrames = 0
+    
+    // Video duration and position tracking
+    private var videoDurationMs: Long = 0L
 
     actual suspend fun initialize(onFrameUpdate: (ImageBitmap) -> Unit) {
         frameCallback = onFrameUpdate
 
         withContext(Dispatchers.IO) {
             try {
+                // Suppress FFmpeg log messages to reduce noise
+                avutil.av_log_set_level(avutil.AV_LOG_ERROR)
+                
                 grabber = FFmpegFrameGrabber(videoPath).apply {
-                    // Don't force specific codec - let FFmpeg auto-detect
-                    // setVideoCodec(org.bytedeco.ffmpeg.global.avcodec.AV_CODEC_ID_H264)
-                    // Use default pixel format for better compatibility
-                    // pixelFormat = org.bytedeco.ffmpeg.global.avutil.AV_PIX_FMT_RGB24
+                    // Use RGB24 pixel format to avoid deprecated yuv420p warnings
                     start()
                 }
 
                 converter = Java2DFrameConverter()
                 frameRate = grabber?.frameRate?.takeIf { it > 0 } ?: 30.0
                 frameDelay = (1000 / frameRate).toLong()
+
+                // Get video duration
+                videoDurationMs = (grabber?.lengthInTime ?: 0L) / 1000L // Convert from microseconds to milliseconds
 
                 // Detect video rotation from metadata
                 videoRotation = detectVideoRotation(grabber)
@@ -69,7 +76,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
                 isInitialized = true
 
                 // Create frame flow and start prefetching
-                createFrameFlow()
+                startFrameFlow()
                 startPrefetching()
 
             } catch (e: Exception) {
@@ -81,7 +88,7 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
     /**
      * Create a Flow that produces video frames on-demand
      */
-    private fun createFrameFlow() {
+    private fun startFrameFlow() {
         frameFlow = flow {
             while (isInitialized && !isEndOfVideo) {
                 try {
@@ -130,18 +137,22 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
         
         // Set video start time, accounting for current position if resuming
         videoStartTime = System.currentTimeMillis() - currentFrameTimestamp
-        
+
+        startPlaybackJob()
+    }
+
+    private fun startPlaybackJob() {
         playbackJob = CoroutineScope(Dispatchers.Main).launch {
             while (isActive && shouldPlay) {
                 val currentTime = System.currentTimeMillis()
                 val elapsedTime = currentTime - videoStartTime // Time elapsed since video started
-                
+
                 // Calculate which frame should be displayed based on elapsed time
                 val targetTimestamp = elapsedTime
-                
+
                 // Get the closest frame to the target timestamp
                 val frame = frameBuffer.getClosestFrame(targetTimestamp)
-                
+
                 if (frame != null) {
                     // Only update if this is a different frame than currently displayed
                     if (frame.timestamp != currentFrameTimestamp) {
@@ -182,29 +193,31 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
      * Seek to a specific timestamp in milliseconds
      * This will attempt to find and display the closest frame to the given timestamp
      */
-    suspend fun seekTo(timestampMs: Long) {
+    actual suspend fun seekTo(timestampMs: Long) {
         if (!isInitialized) return
         
         // Update current frame timestamp
         currentFrameTimestamp = timestampMs
         
-        // If playing, adjust video start time to maintain sync
-        if (shouldPlay) {
-            videoStartTime = System.currentTimeMillis() - timestampMs
-        }
+        // Always update video start time to maintain sync, regardless of play state
+        // This ensures that when seeking during playback, the timing remains correct
+        videoStartTime = System.currentTimeMillis() - timestampMs
         
         // Try to get the closest frame from buffer
-        val frame = frameBuffer.getClosestFrame(timestampMs)
+        val frame = frameBuffer.getNextFrame(timestampMs)
         if (frame != null) {
+            println("[seekTo] have frame ${timestampMs} ${frame} ")
             withContext(Dispatchers.Main) {
                 frameCallback?.invoke(frame.imageBitmap)
             }
         } else {
             // Frame not in buffer, seek in the grabber
-            try {
+            if (playbackJob?.isActive == true) {
+                playbackJob?.cancel()
+                frameBuffer.resetBuffer()
                 grabber?.timestamp = timestampMs * 1000L // Convert to microseconds
-            } catch (e: Exception) {
-                // Handle seek errors gracefully
+                println("[seekTo] set grabber timestamp ${timestampMs * 1000L}")
+                startPlaybackJob()
             }
         }
     }
@@ -253,6 +266,14 @@ actual class VideoPlayer actual constructor(private val videoPath: String) {
         } catch (e: Exception) {
             0 // Default to no rotation on error
         }
+    }
+    
+    actual fun getCurrentPosition(): Long {
+        return currentFrameTimestamp
+    }
+    
+    actual fun getDuration(): Long {
+        return videoDurationMs
     }
 }
 

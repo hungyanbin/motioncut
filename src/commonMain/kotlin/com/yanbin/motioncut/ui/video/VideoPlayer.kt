@@ -10,4 +10,7 @@ expect class VideoPlayer(videoPath: String) {
     fun play()
     fun pause()
     fun stop()
+    suspend fun seekTo(timestampMs: Long)
+    fun getCurrentPosition(): Long
+    fun getDuration(): Long
 }

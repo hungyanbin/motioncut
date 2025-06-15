@@ -107,9 +107,13 @@ class TimestampFrameBuffer(private val defaultCapacity: Int = 200) {
         }
     }
 
+    fun resetBuffer() {
+        frames.clear()
+    }
+
     /**
      * Get the closest frame to the given timestamp
-     * Returns null if buffer is empty
+     * Returns null if buffer is empty or no frame within 0.033 seconds threshold
      */
     suspend fun getClosestFrame(timestamp: Long): Frame? {
         return mutex.withLock {
@@ -122,13 +126,28 @@ class TimestampFrameBuffer(private val defaultCapacity: Int = 200) {
             val lowerEntry = frames.lowerEntry(timestamp)
             val higherEntry = frames.higherEntry(timestamp)
 
+            val thresholdMillis = 33L // 0.033 seconds in microseconds
+
             when {
-                lowerEntry == null -> higherEntry?.value
-                higherEntry == null -> lowerEntry.value
+                lowerEntry == null -> {
+                    higherEntry?.let { entry ->
+                        val diff = entry.key - timestamp
+                        if (diff <= thresholdMillis) entry.value else null
+                    }
+                }
+                higherEntry == null -> {
+                    val diff = timestamp - lowerEntry.key
+                    if (diff <= thresholdMillis) lowerEntry.value else null
+                }
                 else -> {
                     val lowerDiff = timestamp - lowerEntry.key
                     val higherDiff = higherEntry.key - timestamp
-                    if (lowerDiff <= higherDiff) lowerEntry.value else higherEntry.value
+                    
+                    // Check if closest frame is within threshold
+                    val closestEntry = if (lowerDiff <= higherDiff) lowerEntry else higherEntry
+                    val closestDiff = if (lowerDiff <= higherDiff) lowerDiff else higherDiff
+                    
+                    if (closestDiff <= thresholdMillis) closestEntry.value else null
                 }
             }
         }
@@ -136,10 +155,15 @@ class TimestampFrameBuffer(private val defaultCapacity: Int = 200) {
 
     /**
      * Get the next available frame after the given timestamp
+     * Returns null if no frame within 0.033 seconds threshold
      */
     suspend fun getNextFrame(timestamp: Long): Frame? {
         return mutex.withLock {
-            frames.higherEntry(timestamp)?.value
+            val thresholdMillis = 33L
+            frames.higherEntry(timestamp)?.let { entry ->
+                val diff = entry.key - timestamp
+                if (diff <= thresholdMillis) entry.value else null
+            }
         }
     }
 

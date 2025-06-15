@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yanbin.motioncut.domain.VideoFile
 import com.yanbin.motioncut.ui.widget.Pause
+import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
@@ -42,6 +43,9 @@ fun VideoView(
 ) {
     var currentIsPlaying by remember { mutableStateOf(isPlaying) }
     var progress by remember { mutableStateOf(0f) }
+    var videoPlayer by remember { mutableStateOf<VideoPlayer?>(null) }
+    var duration by remember { mutableStateOf(0L) }
+    val coroutineScope = rememberCoroutineScope()
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -57,6 +61,10 @@ fun VideoView(
             VideoDisplayArea(
                 videoFile = videoFile,
                 isPlaying = currentIsPlaying,
+                onVideoPlayerReady = { player ->
+                    videoPlayer = player
+                    duration = player.getDuration()
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -75,12 +83,30 @@ fun VideoView(
                 progress = progress,
                 onProgressChange = { newProgress ->
                     progress = newProgress
+                    // Seek to the new position
+                    videoPlayer?.let { player ->
+                        val targetPosition = (newProgress * duration).toLong()
+                        coroutineScope.launch {
+                            player.seekTo(targetPosition)
+                        }
+                    }
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .align(Alignment.BottomCenter)
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             )
+        }
+    }
+
+    // Update progress based on video position
+    LaunchedEffect(currentIsPlaying, videoPlayer) {
+        if (currentIsPlaying && videoPlayer != null && duration > 0) {
+            while (currentIsPlaying) {
+                val currentPosition = videoPlayer!!.getCurrentPosition()
+                progress = (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
+                kotlinx.coroutines.delay(100) // Update every 100ms
+            }
         }
     }
 }
@@ -150,7 +176,8 @@ private fun VideoProgressBar(
 fun VideoDisplayArea(
     videoFile: VideoFile,
     isPlaying: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onVideoPlayerReady: (VideoPlayer) -> Unit = {}
 ) {
     var currentFrame by remember { mutableStateOf<ImageBitmap?>(null) }
     var videoPlayer by remember { mutableStateOf<VideoPlayer?>(null) }
@@ -176,6 +203,7 @@ fun VideoDisplayArea(
             }
 
             videoPlayer = player
+            onVideoPlayerReady(player) // Notify that video player is ready
             isLoading = false
         } catch (e: Exception) {
             errorMessage = "Failed to load video: ${e.message}"
